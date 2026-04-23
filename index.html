@@ -117,11 +117,15 @@
                 </section>
             </main>
 
-            <div class="bottom-actionbar safe-bottom">
+            <div class="bottom-actionbar safe-bottom bottom-actionbar--detail">
                 <button id="detail-like-btn" class="action-btn" type="button">点赞</button>
                 <button id="detail-favorite-btn" class="action-btn" type="button">收藏</button>
-                <button id="detail-comment-btn" class="action-btn" type="button">评论</button>
-                <button id="detail-share-btn" class="action-btn" type="button">分享</button>
+
+                <div class="detail-comment-box">
+                    <input id="detail-comment-input" class="detail-comment-input" type="text" placeholder="写下你的评论..." />
+                    <button id="detail-comment-send-btn" class="primary-btn primary-btn--small"
+                        type="button">发送</button>
+                </div>
             </div>
         </section>
 
