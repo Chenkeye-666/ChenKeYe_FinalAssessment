@@ -279,8 +279,9 @@ function renderPage(path) {
         }
 
         state.currentChatUserId = userId;
-        fetchChatHistory(userId);
         renderChatHeader(userId);
+        fetchChatHistory(userId);
+        connectChatSocket();
     }
 }
 
@@ -1747,6 +1748,70 @@ async function fetchChatHistory(receiverId, pageNum = 1, pageSize = 20) {
     }
 }
 
+function connectChatSocket() {
+    const token = getToken();
+    if (!token) {
+        console.warn('聊天连接失败：没有 token');
+        return;
+    }
+
+    if (state.chatSocket) {
+        if (state.chatSocket.readyState === WebSocket.OPEN) {
+            console.log('聊天 WebSocket 已连接，无需重复连接');
+            return;
+        }
+
+        if (state.chatSocket.readyState === WebSocket.CONNECTING) {
+            console.log('聊天 WebSocket 正在连接中');
+            return;
+        }
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `wss://duck1437.shop/ws/chat?token=${encodeURIComponent(token)}`;
+
+    console.log('准备连接聊天 WebSocket:', wsUrl);
+
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+        console.log('聊天 WebSocket 已连接');
+    };
+
+    socket.onmessage = (event) => {
+        console.log('收到聊天消息:', event.data);
+
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.content) {
+                state.chatHistoryList.push({
+                    chatMsgId: data.chatMsgId || `ws_${Date.now()}`,
+                    senderId: data.senderId,
+                    receiverId: data.receiverId,
+                    content: data.content || '',
+                    createTime: data.sendTime || new Date().toLocaleString()
+                });
+
+                renderChatHistory();
+            }
+        } catch (error) {
+            console.error('解析聊天消息失败:', error);
+        }
+    };
+
+    socket.onerror = (error) => {
+        console.error('聊天 WebSocket 错误:', error);
+    };
+
+    socket.onclose = (event) => {
+        console.warn('聊天 WebSocket 已关闭:', event.code, event.reason);
+        state.chatSocket = null;
+    };
+
+    state.chatSocket = socket;
+}
+
 // 渲染聊天头部
 function renderChatHeader(userId) {
     const title = document.querySelector('#chat-page-title');
@@ -1807,17 +1872,28 @@ function bindChatEvents() {
             return;
         }
 
-        const newMessage = {
-            chatMsgId: `temp_${Date.now()}`,
+        if (!state.chatSocket) {
+            showToast('聊天连接未建立');
+            console.warn('发送失败：state.chatSocket 不存在');
+            return;
+        }
+
+        console.log('当前 WebSocket readyState:', state.chatSocket.readyState);
+
+        if (state.chatSocket.readyState !== WebSocket.OPEN) {
+            showToast('聊天连接未建立，请稍后重试');
+            return;
+        }
+
+        const messageData = {
+            type: 0,
             senderId: Number(senderId),
             receiverId: Number(receiverId),
             content,
-            createTime: new Date().toLocaleString()
+            sendTime: new Date().toISOString().slice(0, 19).replace('T', ' ')
         };
 
-        state.chatHistoryList.push(newMessage);
-        renderChatHistory();
-
+        state.chatSocket.send(JSON.stringify(messageData));
         input.value = '';
     });
 }
