@@ -129,7 +129,7 @@
             </div>
         </section>
 
-        <!-- 发布 / 编辑页 -->
+        <!-- 发布页 -->
         <section id="page-publish" class="page" data-route="/publish">
             <header class="topbar safe-top">
                 <button class="icon-btn back-btn" type="button" data-back>返回</button>
@@ -275,6 +275,24 @@
                     </div>
                 </section>
 
+                <section class="profile-relation-card">
+                    <div class="section-header">
+                        <h3>社交关系</h3>
+                    </div>
+
+                    <div class="profile-relation-columns">
+                        <div class="profile-relation-block">
+                            <div class="profile-relation-block__title">关注列表</div>
+                            <div id="profile-following-user-list" class="relation-user-list"></div>
+                        </div>
+
+                        <div class="profile-relation-block">
+                            <div class="profile-relation-block__title">粉丝列表</div>
+                            <div id="profile-follower-user-list" class="relation-user-list"></div>
+                        </div>
+                    </div>
+                </section>
+
                 <div class="tabs tabs--top">
                     <button class="tab-btn active" data-profile-tab="posts" type="button">帖子</button>
                     <button class="tab-btn" data-profile-tab="likes" type="button">我的赞</button>
@@ -286,11 +304,11 @@
                 </section>
 
                 <section id="profile-likes-panel" class="tab-panel hidden">
-                    <div id="profile-like-list" class="waterfall-list"></div>
+                    <div id="profile-liked-list" class="waterfall-list"></div>
                 </section>
 
                 <section id="profile-favorites-panel" class="tab-panel hidden">
-                    <div id="profile-favorite-list" class="waterfall-list"></div>
+                    <div id="profile-favorites-list" class="waterfall-list"></div>
                 </section>
             </main>
         </section>
@@ -332,7 +350,7 @@
             <div class="tabs tabs--top">
                 <button class="tab-btn active" data-message-tab="follow" type="button">关注我</button>
                 <button class="tab-btn" data-message-tab="comment" type="button">评论我</button>
-                <button class="tab-btn" data-message-tab="mention" type="button">@我</button>
+                <button class="tab-btn" data-message-tab="like" type="button">点赞我</button>
                 <button class="tab-btn" data-message-tab="chat" type="button">私聊</button>
             </div>
 
@@ -345,8 +363,8 @@
                     <div id="comment-message-list" class="message-list"></div>
                 </section>
 
-                <section id="message-mention-panel" class="tab-panel hidden">
-                    <div id="mention-message-list" class="message-list"></div>
+                <section id="message-like-panel" class="tab-panel hidden">
+                    <div id="like-message-list" class="message-list"></div>
                 </section>
 
                 <section id="message-chat-panel" class="tab-panel hidden">
@@ -377,7 +395,10 @@
         <nav id="global-tabbar" class="global-tabbar safe-bottom hidden">
             <button class="tabbar-item active" data-tabbar-route="/home" type="button">首页</button>
             <button class="tabbar-item" data-tabbar-route="/publish" type="button">发布</button>
-            <button class="tabbar-item" data-tabbar-route="/messages" type="button">消息</button>
+            <button class="tabbar-item" data-tabbar-route="/messages" type="button">
+                消息
+                <span id="message-tabbar-badge" class="tabbar-badge hidden">0</span>
+            </button>
             <button class="tabbar-item" data-tabbar-route="/profile" type="button">我的</button>
         </nav>
     </div>

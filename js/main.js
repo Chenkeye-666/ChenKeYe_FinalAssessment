@@ -33,7 +33,37 @@ const state = {
     currentCommentSortType: 1,
     detailIsLiked: false,
     detailIsFavored: false,
-    favoriteStatusMap: {}
+    favoriteStatusMap: {},
+    likedPostIds: [],
+    favoritedPostIds: [],
+    profileLikedPosts: [],
+    profileFavoritedPosts: [],
+    profileIsFollowing: false,
+    profileFollowingCount: 0,
+    profileFollowerCount: 0,
+    profileFollowingIds: [],
+    profileFollowerIds: [],
+    homeFollowingIds: [],
+    followPosts: [],
+    draftList: [],
+    currentDraftId: '',
+    isRecommendLoadingMore: false,
+    hasMoreRecommendPosts: true,
+    recommendScrollThreshold: 120,
+    followVisibleCount: 0,
+    followPageSize: 5,
+    hasMoreFollowPosts: true,
+    isFollowLoadingMore: false,
+    messageList: [],
+    followMessageList: [],
+    likeMessageList: [],
+    commentMessageList: [],
+    followUnreadCount: 0,
+    likeUnreadCount: 0,
+    commentUnreadCount: 0,
+    chatHistoryList: [],
+    currentChatUserId: '',
+    chatSocket: null
 };
 
 function init() {
@@ -63,6 +93,18 @@ function bindEvents() {
         item.addEventListener('click', () => {
             const route = item.dataset.tabbarRoute;
             if (!route) return;
+
+            if (route === '/profile') {
+                const currentUserId = localStorage.getItem('userId');
+                if (!currentUserId) {
+                    showToast('用户 id 不存在');
+                    return;
+                }
+
+                goTo(`/profile?userId=${currentUserId}`);
+                return;
+            }
+
             goTo(route);
         });
     });
@@ -83,6 +125,8 @@ function bindEvents() {
     bindPublishEvents();
     bindDetailCommentEvents();
     bindDetailActionEvents();
+    bindHomeScrollLoadMore();
+    bindChatEvents();
 }
 
 function restoreLoginState() {
@@ -158,7 +202,8 @@ function renderPage(path) {
     updatePageTitle(path);
 
     if (path === '/home') {
-        fetchRecommendPosts();
+        fetchRecommendPosts(true);
+        fetchHomeFollowPosts();
     }
 
     if (path === '/post-detail') {
@@ -185,6 +230,13 @@ function renderPage(path) {
 
         fetchProfileUser(userId);
         fetchProfilePosts(userId);
+        fetchLikedPostIds();
+        fetchFavoritedPostIds();
+        fetchFollowStatus(userId);
+        fetchFollowingCount(userId);
+        fetchFollowerCount(userId);
+        fetchFollowingIds(userId);
+        fetchFollowerIds(userId);
     }
 
     if (path === '/search') {
@@ -206,6 +258,29 @@ function renderPage(path) {
 
     if (path === '/publish') {
         renderDraftToPublishForm();
+    }
+
+    if (path === '/drafts') {
+        loadDraftList();
+    }
+
+    if (path === '/messages') {
+        fetchAllMessages();
+        fetchUnreadMessages();
+    }
+
+    if (path === '/chat') {
+        const query = getRouteQuery();
+        const userId = query.get('userId');
+
+        if (!userId) {
+            showToast('聊天用户 id 不存在');
+            return;
+        }
+
+        state.currentChatUserId = userId;
+        fetchChatHistory(userId);
+        renderChatHeader(userId);
     }
 }
 
@@ -322,9 +397,18 @@ async function handleLoginSubmit(event) {
 }
 
 // 请求首页帖子列表
-async function fetchRecommendPosts() {
+async function fetchRecommendPosts(reset = false) {
     try {
-        toggleGlobalLoading(true);
+        if (state.isRecommendLoadingMore) return;
+        if (!reset && !state.hasMoreRecommendPosts) return;
+
+        state.isRecommendLoadingMore = true;
+
+        if (reset) {
+            state.recommendLastPostId = 0;
+            state.hasMoreRecommendPosts = true;
+            toggleGlobalLoading(true);
+        }
 
         const token = getToken();
 
@@ -348,14 +432,247 @@ async function fetchRecommendPosts() {
             return;
         }
 
-        state.recommendPosts = result.data || [];
+        const newPosts = Array.isArray(result.data) ? result.data : [];
+
+        if (reset) {
+            state.recommendPosts = newPosts;
+        } else {
+            const oldIds = new Set(state.recommendPosts.map((item) => item.postId));
+            const appendPosts = newPosts.filter((item) => !oldIds.has(item.postId));
+            state.recommendPosts = [...state.recommendPosts, ...appendPosts];
+        }
+
+        if (state.recommendPosts.length) {
+            const lastPost = state.recommendPosts[state.recommendPosts.length - 1];
+            state.recommendLastPostId = lastPost?.postId || 0;
+        }
+
+        state.hasMoreRecommendPosts = newPosts.length >= state.recommendLimit;
+
         renderRecommendPostList();
+        syncProfileLikedPosts();
+        syncProfileFavoritedPosts();
+        updateRecommendListFooter();
     } catch (error) {
         console.error('获取帖子列表失败:', error);
         showToast('获取帖子失败，请稍后重试');
     } finally {
+        state.isRecommendLoadingMore = false;
         toggleGlobalLoading(false);
     }
+}
+
+// 绑定首页和推荐页滚动加载
+function bindHomeScrollLoadMore() {
+    window.addEventListener('scroll', () => {
+        if (state.currentRoute !== '/home') return;
+
+        const doc = document.documentElement;
+        const scrollTop = window.scrollY || doc.scrollTop || 0;
+        const clientHeight = window.innerHeight || doc.clientHeight || 0;
+        const scrollHeight = doc.scrollHeight || 0;
+        const distanceToBottom = scrollHeight - (scrollTop + clientHeight);
+
+        if (distanceToBottom > state.recommendScrollThreshold) return;
+
+        const followPanel = document.querySelector('#home-follow-panel');
+
+        if (followPanel && followPanel.classList.contains('active')) {
+            loadMoreFollowPosts();
+            return;
+        }
+
+        fetchRecommendPosts(false);
+    });
+}
+
+// 更新底部文案
+function updateRecommendListFooter() {
+    const footer = document.querySelector('#home-recommend-panel .list-footer');
+    if (!footer) return;
+
+    if (state.isRecommendLoadingMore) {
+        footer.textContent = '加载中...';
+        return;
+    }
+
+    if (!state.recommendPosts.length) {
+        footer.textContent = '暂无内容';
+        return;
+    }
+
+    footer.textContent = state.hasMoreRecommendPosts ? '上拉加载更多' : '没有更多内容了';
+}
+
+// 请求首页关注列表
+async function fetchHomeFollowPosts() {
+    try {
+        const currentUserId = localStorage.getItem('userId');
+        if (!currentUserId) return;
+
+        const token = getToken();
+
+        const followResponse = await fetch(`${BASE_URL}/follow/getFollowingIds/${currentUserId}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const followResult = await followResponse.json();
+        console.log('首页关注用户 ids 返回结果:', followResult);
+
+        if (followResult.code !== 200) {
+            showToast(followResult.msg || '获取关注列表失败');
+            return;
+        }
+
+        const followingIds = Array.isArray(followResult.data) ? followResult.data : [];
+        state.homeFollowingIds = followingIds;
+
+        if (!followingIds.length) {
+            state.followPosts = [];
+            state.followVisibleCount = 0;
+            state.hasMoreFollowPosts = false;
+            renderHomeFollowPosts();
+            return;
+        }
+
+        const requests = followingIds.map((userId) => {
+            return fetch(`${BASE_URL}/post/getPostByUser/${userId}`, {
+                method: 'POST',
+                headers: {
+                    Authorization: token
+                }
+            }).then((res) => res.json());
+        });
+
+        const results = await Promise.all(requests);
+
+        const allPosts = results.flatMap((item) => {
+            if (item.code === 200 && Array.isArray(item.data)) {
+                return item.data;
+            }
+            return [];
+        });
+
+        allPosts.sort((a, b) => {
+            const timeA = new Date(a.createTime || 0).getTime();
+            const timeB = new Date(b.createTime || 0).getTime();
+            return timeB - timeA;
+        });
+
+        state.followPosts = allPosts;
+        state.followVisibleCount = state.followPageSize;
+        state.hasMoreFollowPosts = state.followPosts.length > state.followVisibleCount;
+        renderHomeFollowPosts();
+    } catch (error) {
+        console.error('获取首页关注流失败:', error);
+        showToast('获取关注内容失败，请稍后重试');
+    }
+}
+
+// 渲染关注列表
+function renderHomeFollowPosts() {
+    const list = document.querySelector('#follow-post-list');
+    if (!list) return;
+
+    if (!state.followPosts.length) {
+        list.innerHTML = '<div class="empty-block">暂无关注内容，快去关注一些用户吧</div>';
+        updateFollowListFooter();
+        return;
+    }
+
+    const visiblePosts = state.followPosts.slice(0, state.followVisibleCount);
+
+    const html = visiblePosts.map((item) => {
+        const imageList = item.images ? item.images.split(',') : [];
+        const cover = imageList[0] || '';
+        const title = item.title || '未命名帖子';
+        const content = item.content || '';
+        const topic = item.topic || '未分类';
+        const location = item.location || '未知地点';
+        const likeCount = item.likeCount ?? 0;
+        const favCount = item.favCount ?? 0;
+        const commentCount = item.commentCount ?? 0;
+
+        return `
+      <article class="post-card follow-post-card" data-post-id="${item.postId}">
+        <div class="post-card__cover-wrap">
+          ${cover
+                ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
+                : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
+            }
+        </div>
+
+        <div class="post-card__body">
+          <h3 class="post-card__title">${escapeHTML(title)}</h3>
+          <p class="post-card__content">${escapeHTML(content)}</p>
+
+          <div class="post-card__meta">
+            <span>#${escapeHTML(topic)}</span>
+            <span>${escapeHTML(location)}</span>
+          </div>
+
+          <div class="post-card__stats">
+            <span>赞 ${likeCount}</span>
+            <span>藏 ${favCount}</span>
+            <span>评 ${commentCount}</span>
+          </div>
+        </div>
+      </article>
+    `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindFollowPostCardEvents();
+    updateFollowListFooter();
+}
+
+// 加载更多关注内容
+function loadMoreFollowPosts() {
+    if (state.isFollowLoadingMore) return;
+    if (!state.hasMoreFollowPosts) return;
+
+    state.isFollowLoadingMore = true;
+
+    state.followVisibleCount += state.followPageSize;
+    state.hasMoreFollowPosts = state.followVisibleCount < state.followPosts.length;
+
+    renderHomeFollowPosts();
+    state.isFollowLoadingMore = false;
+}
+
+// 更新关注页面底部文案
+function updateFollowListFooter() {
+    const footer = document.querySelector('#home-follow-panel .list-footer');
+    if (!footer) return;
+
+    if (!state.followPosts.length) {
+        footer.textContent = '暂无内容';
+        return;
+    }
+
+    if (state.isFollowLoadingMore) {
+        footer.textContent = '加载中...';
+        return;
+    }
+
+    footer.textContent = state.hasMoreFollowPosts ? '上拉加载更多' : '没有更多内容了';
+}
+
+// 关注列表卡片点击事件
+function bindFollowPostCardEvents() {
+    const cards = document.querySelectorAll('#follow-post-list .follow-post-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
 }
 
 // 请求帖子详情
@@ -549,6 +866,269 @@ async function fetchProfilePosts(userId) {
     }
 }
 
+// 获取关注状态
+async function fetchFollowStatus(userId) {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/follow/status/${userId}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('关注状态返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取关注状态失败');
+            return;
+        }
+
+        state.profileIsFollowing = Boolean(result.data?.isFollowing);
+        renderProfileUser();
+    } catch (error) {
+        console.error('获取关注状态失败:', error);
+        showToast('获取关注状态失败，请稍后重试');
+    }
+}
+
+// 获取关注数
+async function fetchFollowingCount(userId) {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/follow/getFollowingCount/${userId}`, {
+            method: 'POST',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('关注数返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取关注数失败');
+            return;
+        }
+
+        state.profileFollowingCount = result.data ?? 0;
+        renderProfileUser();
+    } catch (error) {
+        console.error('获取关注数失败:', error);
+        showToast('获取关注数失败，请稍后重试');
+    }
+}
+
+// 获取粉丝数
+async function fetchFollowerCount(userId) {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/follow/getFollowerCount/${userId}`, {
+            method: 'POST',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('粉丝数返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取粉丝数失败');
+            return;
+        }
+
+        state.profileFollowerCount = result.data ?? 0;
+        renderProfileUser();
+    } catch (error) {
+        console.error('获取粉丝数失败:', error);
+        showToast('获取粉丝数失败，请稍后重试');
+    }
+}
+
+// 获取点赞帖子ids
+async function fetchLikedPostIds() {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/post/liked`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('点赞帖子 id 列表返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取点赞列表失败');
+            return;
+        }
+
+        state.likedPostIds = Array.isArray(result.data) ? result.data : [];
+        syncProfileLikedPosts();
+    } catch (error) {
+        console.error('获取点赞列表失败:', error);
+        showToast('获取点赞列表失败，请稍后重试');
+    }
+}
+
+// 获取收藏帖子ids
+async function fetchFavoritedPostIds() {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/post/favorited`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('收藏帖子 id 列表返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取收藏列表失败');
+            return;
+        }
+
+        state.favoritedPostIds = Array.isArray(result.data) ? result.data : [];
+        syncProfileFavoritedPosts();
+    } catch (error) {
+        console.error('获取收藏列表失败:', error);
+        showToast('获取收藏列表失败，请稍后重试');
+    }
+}
+
+// 同步点赞帖子列表
+function syncProfileLikedPosts() {
+    const sourcePosts = Array.isArray(state.recommendPosts) ? state.recommendPosts : [];
+
+    state.profileLikedPosts = sourcePosts.filter((item) =>
+        state.likedPostIds.includes(item.postId)
+    );
+
+    renderProfileLikedPosts();
+}
+
+// 同步收藏帖子列表
+function syncProfileFavoritedPosts() {
+    const sourcePosts = Array.isArray(state.recommendPosts) ? state.recommendPosts : [];
+
+    state.profileFavoritedPosts = sourcePosts.filter((item) =>
+        state.favoritedPostIds.includes(item.postId)
+    );
+
+    renderProfileFavoritedPosts();
+}
+
+
+// 获取关注列表ids
+async function fetchFollowingIds(userId) {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/follow/getFollowingIds/${userId}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('关注列表 ids 返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取关注列表失败');
+            return;
+        }
+
+        state.profileFollowingIds = Array.isArray(result.data) ? result.data : [];
+        renderProfileFollowingUsers();
+    } catch (error) {
+        console.error('获取关注列表失败:', error);
+        showToast('获取关注列表失败，请稍后重试');
+    }
+}
+
+// 渲染关注列表
+function renderProfileFollowingUsers() {
+    const list = document.querySelector('#profile-following-user-list');
+    if (!list) return;
+
+    if (!state.profileFollowingIds.length) {
+        list.innerHTML = '<div class="empty-block">暂无关注用户</div>';
+        return;
+    }
+
+    const html = state.profileFollowingIds.map((userId) => {
+        return `
+            <button class="relation-user-item following-user-btn" type="button" data-user-id="${userId}">
+                用户 ${userId}
+            </button>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindProfileFollowingUserEvents();
+}
+
+// 获取粉丝列表ids
+async function fetchFollowerIds(userId) {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/follow/getFollowerIds/${userId}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('粉丝列表 ids 返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取粉丝列表失败');
+            return;
+        }
+
+        state.profileFollowerIds = Array.isArray(result.data) ? result.data : [];
+        renderProfileFollowerUsers();
+    } catch (error) {
+        console.error('获取粉丝列表失败:', error);
+        showToast('获取粉丝列表失败，请稍后重试');
+    }
+}
+
+// 渲染粉丝列表
+function renderProfileFollowerUsers() {
+    const list = document.querySelector('#profile-follower-user-list');
+    if (!list) return;
+
+    if (!state.profileFollowerIds.length) {
+        list.innerHTML = '<div class="empty-block">暂无粉丝用户</div>';
+        return;
+    }
+
+    const html = state.profileFollowerIds.map((userId) => {
+        return `
+            <button class="relation-user-item follower-user-btn" type="button" data-user-id="${userId}">
+                用户 ${userId}
+            </button>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindProfileFollowerUserEvents();
+}
+
 function renderProfileUser() {
     const user = state.currentProfileUser;
     if (!user) return;
@@ -595,11 +1175,11 @@ function renderProfileUser() {
         <span>获赞</span>
       </div>
       <div class="profile-stat-item">
-        <strong>0</strong>
+        <strong>${state.profileFollowingCount}</strong>
         <span>关注</span>
       </div>
       <div class="profile-stat-item">
-        <strong>0</strong>
+        <strong>${state.profileFollowerCount}</strong>
         <span>粉丝</span>
       </div>
     `;
@@ -613,7 +1193,9 @@ function renderProfileUser() {
       `;
         } else {
             actionRow.innerHTML = `
-        <button id="follow-user-btn" class="primary-btn" type="button">关注</button>
+        <button id="follow-user-btn" class="primary-btn" type="button">
+          ${state.profileIsFollowing ? '已关注' : '关注'}
+        </button>
         <button id="chat-user-btn" class="secondary-btn" type="button">私聊</button>
       `;
         }
@@ -676,8 +1258,142 @@ function renderProfilePosts() {
     renderProfileUser();
 }
 
+// 渲染点赞列表
+function renderProfileLikedPosts() {
+    const list = document.querySelector('#profile-liked-list');
+    if (!list) return;
+
+    if (!state.profileLikedPosts.length) {
+        list.innerHTML = '<div class="empty-block">还没有点赞过帖子</div>';
+        return;
+    }
+
+    const html = state.profileLikedPosts.map((item) => {
+        const imageList = item.images ? item.images.split(',') : [];
+        const cover = imageList[0] || '';
+        const title = item.title || '未命名帖子';
+        const content = item.content || '';
+        const topic = item.topic || '未分类';
+        const location = item.location || '未知地点';
+        const likeCount = item.likeCount ?? 0;
+        const favCount = item.favCount ?? 0;
+        const commentCount = item.commentCount ?? 0;
+
+        return `
+      <article class="post-card" data-post-id="${item.postId}">
+        <div class="post-card__cover-wrap">
+          ${cover
+                ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
+                : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
+            }
+        </div>
+
+        <div class="post-card__body">
+          <h3 class="post-card__title">${escapeHTML(title)}</h3>
+          <p class="post-card__content">${escapeHTML(content)}</p>
+
+          <div class="post-card__meta">
+            <span>#${escapeHTML(topic)}</span>
+            <span>${escapeHTML(location)}</span>
+          </div>
+
+          <div class="post-card__stats">
+            <span>赞 ${likeCount}</span>
+            <span>藏 ${favCount}</span>
+            <span>评 ${commentCount}</span>
+          </div>
+        </div>
+      </article>
+    `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindProfileLikedPostCardEvents();
+}
+
+// 渲染收藏列表
+function renderProfileFavoritedPosts() {
+    const list = document.querySelector('#profile-favorites-list');
+    if (!list) return;
+
+    if (!state.profileFavoritedPosts.length) {
+        list.innerHTML = '<div class="empty-block">还没有收藏过帖子</div>';
+        return;
+    }
+
+    const html = state.profileFavoritedPosts.map((item) => {
+        const imageList = item.images ? item.images.split(',') : [];
+        const cover = imageList[0] || '';
+        const title = item.title || '未命名帖子';
+        const content = item.content || '';
+        const topic = item.topic || '未分类';
+        const location = item.location || '未知地点';
+        const likeCount = item.likeCount ?? 0;
+        const favCount = item.favCount ?? 0;
+        const commentCount = item.commentCount ?? 0;
+
+        return `
+      <article class="post-card" data-post-id="${item.postId}">
+        <div class="post-card__cover-wrap">
+          ${cover
+                ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
+                : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
+            }
+        </div>
+
+        <div class="post-card__body">
+          <h3 class="post-card__title">${escapeHTML(title)}</h3>
+          <p class="post-card__content">${escapeHTML(content)}</p>
+
+          <div class="post-card__meta">
+            <span>#${escapeHTML(topic)}</span>
+            <span>${escapeHTML(location)}</span>
+          </div>
+
+          <div class="post-card__stats">
+            <span>赞 ${likeCount}</span>
+            <span>藏 ${favCount}</span>
+            <span>评 ${commentCount}</span>
+          </div>
+        </div>
+      </article>
+    `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindProfileFavoritedPostCardEvents();
+}
+
 function bindProfilePostCardEvents() {
     const cards = document.querySelectorAll('#profile-post-list .post-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
+}
+
+// 点赞列表卡片点击
+function bindProfileLikedPostCardEvents() {
+    const cards = document.querySelectorAll('#profile-liked-list .post-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
+}
+
+// 收藏列表卡片点击
+function bindProfileFavoritedPostCardEvents() {
+    const cards = document.querySelectorAll('#profile-favorites-list .post-card');
 
     cards.forEach((card) => {
         card.addEventListener('click', () => {
@@ -692,6 +1408,8 @@ function bindProfilePostCardEvents() {
 function bindProfileActionEvents() {
     const goDraftsBtn = document.querySelector('#go-drafts-btn');
     const goSettingsBtn = document.querySelector('#go-settings-btn');
+    const followUserBtn = document.querySelector('#follow-user-btn');
+    const chatUserBtn = document.querySelector('#chat-user-btn');
 
     if (goDraftsBtn) {
         goDraftsBtn.addEventListener('click', () => {
@@ -704,6 +1422,104 @@ function bindProfileActionEvents() {
             goTo('/settings');
         });
     }
+
+    if (followUserBtn) {
+        followUserBtn.addEventListener('click', () => {
+            handleFollowToggle();
+        });
+    }
+
+    if (chatUserBtn) {
+        chatUserBtn.addEventListener('click', () => {
+            const query = getRouteQuery();
+            const userId = query.get('userId');
+
+            if (!userId) {
+                showToast('聊天用户 id 不存在');
+                return;
+            }
+
+            goTo(`/chat?userId=${userId}`);
+        });
+    }
+}
+
+// 关注切换
+async function handleFollowToggle() {
+    const query = getRouteQuery();
+    const userId = query.get('userId');
+
+    if (!userId) {
+        showToast('用户 id 不存在');
+        return;
+    }
+
+    try {
+        toggleGlobalLoading(true);
+
+        const token = getToken();
+        const wasFollowing = state.profileIsFollowing;
+        const url = wasFollowing
+            ? `${BASE_URL}/follow/unfollow/${userId}`
+            : `${BASE_URL}/follow/${userId}`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('关注切换返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '操作失败');
+            return;
+        }
+
+        state.profileIsFollowing = !wasFollowing;
+
+        showToast(wasFollowing ? '已取消关注' : '关注成功');
+
+        fetchFollowStatus(userId);
+        fetchFollowingCount(userId);
+        fetchFollowerCount(userId);
+        renderProfileUser();
+    } catch (error) {
+        console.error('关注操作失败:', error);
+        showToast('操作失败，请稍后重试');
+    } finally {
+        toggleGlobalLoading(false);
+    }
+}
+
+// 关注列表点击事件
+function bindProfileFollowingUserEvents() {
+    const buttons = document.querySelectorAll('.following-user-btn');
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const userId = btn.dataset.userId;
+            if (!userId) return;
+
+            goTo(`/profile?userId=${userId}`);
+        });
+    });
+}
+
+// 粉丝列表点击事件
+function bindProfileFollowerUserEvents() {
+    const buttons = document.querySelectorAll('.follower-user-btn');
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const userId = btn.dataset.userId;
+            if (!userId) return;
+
+            goTo(`/profile?userId=${userId}`);
+        });
+    });
 }
 
 // 获取搜索推荐
@@ -772,7 +1588,7 @@ function bindSearchRecommendEvents() {
     });
 }
 
-// 获取并渲染搜索结果
+// 获取搜索结果
 async function fetchSearchResult(keyword) {
     try {
         toggleGlobalLoading(true);
@@ -851,6 +1667,395 @@ function renderSearchResult(keyword = '') {
     }).join('');
 
     list.innerHTML = html;
+}
+
+// 获取消息
+async function fetchAllMessages() {
+    try {
+        toggleGlobalLoading(true);
+
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/message/all`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('所有消息返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取消息失败');
+            return;
+        }
+
+        state.messageList = Array.isArray(result.data?.messages) ? result.data.messages : [];
+        syncMessageGroups();
+    } catch (error) {
+        console.error('获取消息失败:', error);
+        showToast('获取消息失败，请稍后重试');
+    } finally {
+        toggleGlobalLoading(false);
+    }
+}
+
+// 获取聊天历史
+async function fetchChatHistory(receiverId, pageNum = 1, pageSize = 20) {
+    try {
+        toggleGlobalLoading(true);
+
+        const token = getToken();
+        const senderId = localStorage.getItem('userId');
+
+        if (!senderId || !receiverId) {
+            showToast('聊天参数不完整');
+            return;
+        }
+
+        const params = new URLSearchParams({
+            senderId: String(senderId),
+            receiverId: String(receiverId),
+            pageNum: String(pageNum),
+            pageSize: String(pageSize)
+        });
+
+        const response = await fetch(`${BASE_URL}/chat/history?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('聊天历史返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取聊天记录失败');
+            return;
+        }
+
+        const records = Array.isArray(result.data?.records) ? result.data.records : [];
+        state.chatHistoryList = records;
+        renderChatHistory();
+    } catch (error) {
+        console.error('获取聊天记录失败:', error);
+        showToast('获取聊天记录失败，请稍后重试');
+    } finally {
+        toggleGlobalLoading(false);
+    }
+}
+
+// 渲染聊天头部
+function renderChatHeader(userId) {
+    const title = document.querySelector('#chat-page-title');
+    if (!title) return;
+
+    title.textContent = `与用户 ${userId} 私聊中`;
+}
+
+// 渲染聊天记录
+function renderChatHistory() {
+    const list = document.querySelector('#chat-message-list');
+    if (!list) return;
+
+    if (!state.chatHistoryList.length) {
+        list.innerHTML = '<div class="empty-block">还没有聊天记录，快开始聊天吧</div>';
+        return;
+    }
+
+    const currentUserId = String(localStorage.getItem('userId') || '');
+
+    const html = state.chatHistoryList.map((item) => {
+        const isMine = String(item.senderId) === currentUserId;
+        const content = item.content || '';
+        const createTime = item.createTime || '';
+
+        return `
+            <div class="chat-bubble-row ${isMine ? 'chat-bubble-row--mine' : 'chat-bubble-row--other'}">
+                <div class="chat-bubble ${isMine ? 'chat-bubble--mine' : 'chat-bubble--other'}">
+                    <p class="chat-bubble__text">${escapeHTML(content)}</p>
+                    <span class="chat-bubble__time">${escapeHTML(createTime)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    list.scrollTop = list.scrollHeight;
+}
+
+function bindChatEvents() {
+    const sendBtn = document.querySelector('#chat-send-btn');
+    const input = document.querySelector('#chat-input');
+
+    if (!sendBtn || !input) return;
+
+    sendBtn.addEventListener('click', () => {
+        const content = input.value.trim();
+        if (!content) {
+            showToast('请输入消息内容');
+            return;
+        }
+
+        const senderId = localStorage.getItem('userId');
+        const receiverId = state.currentChatUserId;
+
+        if (!senderId || !receiverId) {
+            showToast('聊天参数不完整');
+            return;
+        }
+
+        const newMessage = {
+            chatMsgId: `temp_${Date.now()}`,
+            senderId: Number(senderId),
+            receiverId: Number(receiverId),
+            content,
+            createTime: new Date().toLocaleString()
+        };
+
+        state.chatHistoryList.push(newMessage);
+        renderChatHistory();
+
+        input.value = '';
+    });
+}
+
+// 获取未读消息
+async function fetchUnreadMessages() {
+    try {
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/message/unread`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('未读消息返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取未读消息失败');
+            return;
+        }
+
+        const unreadMessages = Array.isArray(result.data?.messages) ? result.data.messages : [];
+
+        state.followUnreadCount = unreadMessages.filter((item) => Number(item.type) === 4).length;
+        state.likeUnreadCount = unreadMessages.filter((item) => Number(item.type) === 1).length;
+        state.commentUnreadCount = unreadMessages.filter((item) => Number(item.type) === 3).length;
+
+        renderMessageTabBadges();
+        renderGlobalMessageBadge();
+    } catch (error) {
+        console.error('获取未读消息失败:', error);
+        showToast('获取未读消息失败，请稍后重试');
+    }
+}
+
+function renderMessageTabBadges() {
+    const followBtn = document.querySelector('[data-message-tab="follow"]');
+    const commentBtn = document.querySelector('[data-message-tab="comment"]');
+    const likeBtn = document.querySelector('[data-message-tab="like"]');
+
+    if (followBtn) {
+        followBtn.textContent = state.followUnreadCount > 0
+            ? `关注我 (${state.followUnreadCount})`
+            : '关注我';
+    }
+
+    if (commentBtn) {
+        commentBtn.textContent = state.commentUnreadCount > 0
+            ? `评论我 (${state.commentUnreadCount})`
+            : '评论我';
+    }
+
+    if (likeBtn) {
+        likeBtn.textContent = state.likeUnreadCount > 0
+            ? `点赞我 (${state.likeUnreadCount})`
+            : '点赞我';
+    }
+}
+
+function renderGlobalMessageBadge() {
+    const badge = document.querySelector('#message-tabbar-badge');
+    if (!badge) return;
+
+    const totalUnread =
+        state.followUnreadCount +
+        state.likeUnreadCount +
+        state.commentUnreadCount;
+
+    if (totalUnread > 0) {
+        badge.textContent = String(totalUnread);
+        badge.classList.remove('hidden');
+    } else {
+        badge.textContent = '0';
+        badge.classList.add('hidden');
+    }
+}
+
+// 消息分类
+function syncMessageGroups() {
+    state.followMessageList = state.messageList.filter((item) => Number(item.type) === 4);
+    state.likeMessageList = state.messageList.filter((item) => Number(item.type) === 1);
+    state.commentMessageList = state.messageList.filter((item) => Number(item.type) === 3);
+
+    renderFollowMessages();
+    renderLikeMessages();
+    renderCommentMessages();
+}
+
+// 渲染“关注我”
+function renderFollowMessages() {
+    const list = document.querySelector('#follow-message-list');
+    if (!list) return;
+
+    if (!state.followMessageList.length) {
+        list.innerHTML = '<div class="empty-block">还没有新的关注消息</div>';
+        return;
+    }
+
+    const html = state.followMessageList.map((item) => {
+        const senderId = item.senderId || '';
+        const content = item.content || '有用户关注了你';
+        const createTime = item.createTime || '';
+        const isRead = Number(item.isRead) === 1;
+
+        return `
+            <article class="message-card follow-message-card ${isRead ? '' : 'message-card--unread'}"
+                     data-sender-id="${senderId}">
+                <div class="message-card__main">
+                    <h3 class="message-card__title">用户 ${senderId}</h3>
+                    <p class="message-card__content">${escapeHTML(content)}</p>
+                    <p class="message-card__time">${escapeHTML(createTime)}</p>
+                </div>
+                <div class="message-card__status">
+                    ${isRead ? '已读' : '未读'}
+                </div>
+            </article>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindFollowMessageEvents();
+}
+
+// 渲染“点赞我”
+function renderLikeMessages() {
+    const list = document.querySelector('#like-message-list');
+    if (!list) return;
+
+    if (!state.likeMessageList.length) {
+        list.innerHTML = '<div class="empty-block">还没有新的点赞消息</div>';
+        return;
+    }
+
+    const html = state.likeMessageList.map((item) => {
+        const senderId = item.senderId || '';
+        const postId = item.postId || '';
+        const content = item.content || '有人点赞了你的帖子';
+        const createTime = item.createTime || '';
+        const isRead = Number(item.isRead) === 1;
+
+        return `
+            <article class="message-card like-message-card ${isRead ? '' : 'message-card--unread'}"
+                     data-post-id="${postId}">
+                <div class="message-card__main">
+                    <h3 class="message-card__title">用户 ${senderId}</h3>
+                    <p class="message-card__content">${escapeHTML(content)}</p>
+                    <p class="message-card__time">${escapeHTML(createTime)}</p>
+                </div>
+                <div class="message-card__status">
+                    ${isRead ? '已读' : '未读'}
+                </div>
+            </article>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindLikeMessageEvents();
+}
+
+// 渲染“评论我”
+function renderCommentMessages() {
+    const list = document.querySelector('#comment-message-list');
+    if (!list) return;
+
+    if (!state.commentMessageList.length) {
+        list.innerHTML = '<div class="empty-block">还没有新的评论消息</div>';
+        return;
+    }
+
+    const html = state.commentMessageList.map((item) => {
+        const senderId = item.senderId || '';
+        const postId = item.postId || '';
+        const content = item.content || '有人评论了你的帖子';
+        const createTime = item.createTime || '';
+        const isRead = Number(item.isRead) === 1;
+
+        return `
+            <article class="message-card comment-message-card ${isRead ? '' : 'message-card--unread'}"
+                     data-post-id="${postId}">
+                <div class="message-card__main">
+                    <h3 class="message-card__title">用户 ${senderId}</h3>
+                    <p class="message-card__content">${escapeHTML(content)}</p>
+                    <p class="message-card__time">${escapeHTML(createTime)}</p>
+                </div>
+                <div class="message-card__status">
+                    ${isRead ? '已读' : '未读'}
+                </div>
+            </article>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindCommentMessageEvents();
+}
+
+// “关注我”消息点击
+function bindFollowMessageEvents() {
+    const cards = document.querySelectorAll('.follow-message-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const senderId = card.dataset.senderId;
+            if (!senderId) return;
+
+            goTo(`/profile?userId=${senderId}`);
+        });
+    });
+}
+
+// “点赞我”消息点击
+function bindLikeMessageEvents() {
+    const cards = document.querySelectorAll('.like-message-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
+}
+
+// “评论我”消息点击
+function bindCommentMessageEvents() {
+    const cards = document.querySelectorAll('.comment-message-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
 }
 
 // 读取搜索历史
@@ -1034,62 +2239,199 @@ function saveDraftPost() {
     const contentInput = document.querySelector('#publish-content');
     const permissionSelect = document.querySelector('#publish-permission');
 
-    const draft = {
-        title: titleInput?.value.trim() || '',
-        content: contentInput?.value.trim() || '',
-        permission: permissionSelect?.value || 'public',
-        images: state.publishImageUrls
+    const title = titleInput?.value.trim() || '';
+    const content = contentInput?.value.trim() || '';
+    const permission = permissionSelect?.value || 'public';
+
+    const draftList = JSON.parse(localStorage.getItem('draftList') || '[]');
+    const safeDraftList = Array.isArray(draftList) ? draftList : [];
+
+    const draftId = state.currentDraftId || `draft_${Date.now()}`;
+
+    const draftItem = {
+        id: draftId,
+        title,
+        content,
+        permission,
+        images: [...state.publishImageUrls],
+        updateTime: new Date().toISOString()
     };
 
-    localStorage.setItem('draftPostData', JSON.stringify(draft));
-    state.draftPostData = draft;
+    const existIndex = safeDraftList.findIndex((item) => item.id === draftId);
+
+    if (existIndex > -1) {
+        safeDraftList[existIndex] = draftItem;
+    } else {
+        safeDraftList.unshift(draftItem);
+    }
+
+    localStorage.setItem('draftList', JSON.stringify(safeDraftList));
+    state.draftList = safeDraftList;
+    state.currentDraftId = draftId;
 
     showToast('草稿已保存');
 }
 
 // 读取草稿到发布页
 function renderDraftToPublishForm() {
-    const draft = JSON.parse(localStorage.getItem('draftPostData') || 'null');
-    state.draftPostData = draft;
+    const query = getRouteQuery();
+    const draftId = query.get('draftId') || '';
+
+    const draftList = JSON.parse(localStorage.getItem('draftList') || '[]');
+    const safeDraftList = Array.isArray(draftList) ? draftList : [];
+
+    state.draftList = safeDraftList;
+    state.currentDraftId = draftId;
 
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
     const permissionSelect = document.querySelector('#publish-permission');
 
-    if (!draft) {
+    if (!draftId) {
         if (titleInput) titleInput.value = '';
         if (contentInput) contentInput.value = '';
         if (permissionSelect) permissionSelect.value = 'public';
+
         state.publishImageUrls = [];
+        state.currentDraftId = '';
+        renderPublishImageList();
         return;
     }
 
-    if (titleInput) titleInput.value = draft.title || '';
-    if (contentInput) contentInput.value = draft.content || '';
-    if (permissionSelect) permissionSelect.value = draft.permission || 'public';
+    const currentDraft = safeDraftList.find((item) => item.id === draftId);
 
-    state.publishImageUrls = Array.isArray(draft.images) ? draft.images : [];
+    if (!currentDraft) {
+        if (titleInput) titleInput.value = '';
+        if (contentInput) contentInput.value = '';
+        if (permissionSelect) permissionSelect.value = 'public';
+
+        state.publishImageUrls = [];
+        state.currentDraftId = '';
+        renderPublishImageList();
+        return;
+    }
+
+    if (titleInput) titleInput.value = currentDraft.title || '';
+    if (contentInput) contentInput.value = currentDraft.content || '';
+    if (permissionSelect) permissionSelect.value = currentDraft.permission || 'public';
+
+    state.publishImageUrls = Array.isArray(currentDraft.images) ? currentDraft.images : [];
     renderPublishImageList();
 }
 
 // 清空草稿
 function clearDraftPost() {
-    localStorage.removeItem('draftPostData');
-    state.draftPostData = null;
+    if (!state.currentDraftId) return;
+
+    const draftList = JSON.parse(localStorage.getItem('draftList') || '[]');
+    const safeDraftList = Array.isArray(draftList) ? draftList : [];
+
+    const nextDraftList = safeDraftList.filter((item) => item.id !== state.currentDraftId);
+
+    localStorage.setItem('draftList', JSON.stringify(nextDraftList));
+    state.draftList = nextDraftList;
+    state.currentDraftId = '';
 }
 
-// 重置发布表单
+// 清空还原发布页
 function resetPublishForm() {
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
     const permissionSelect = document.querySelector('#publish-permission');
+    const publishImageInput = document.querySelector('#publish-image-input');
 
     if (titleInput) titleInput.value = '';
     if (contentInput) contentInput.value = '';
     if (permissionSelect) permissionSelect.value = 'public';
+    if (publishImageInput) publishImageInput.value = '';
 
     state.publishImageUrls = [];
+    state.currentDraftId = '';
     renderPublishImageList();
+}
+
+// 加载草稿列表
+function loadDraftList() {
+    const draftList = JSON.parse(localStorage.getItem('draftList') || '[]');
+    state.draftList = Array.isArray(draftList) ? draftList : [];
+    renderDraftList();
+}
+
+// 渲染草稿列表
+function renderDraftList() {
+    const list = document.querySelector('#draft-list');
+    if (!list) return;
+
+    if (!state.draftList.length) {
+        list.innerHTML = '<div class="empty-block">草稿箱还是空的</div>';
+        return;
+    }
+
+    const html = state.draftList.map((item) => {
+        const title = item.title || '未命名草稿';
+        const content = item.content || '';
+        const updateTime = item.updateTime || '';
+
+        return `
+            <article class="draft-card" data-draft-id="${item.id}">
+                <div class="draft-card__body">
+                    <h3 class="draft-card__title">${escapeHTML(title)}</h3>
+                    <p class="draft-card__content">${escapeHTML(content)}</p>
+                    <p class="draft-card__time">${escapeHTML(updateTime)}</p>
+                </div>
+                <div class="draft-card__actions">
+                    <button class="draft-open-btn" type="button" data-draft-id="${item.id}">继续编辑</button>
+                    <button class="draft-delete-btn" type="button" data-draft-id="${item.id}">删除</button>
+                </div>
+            </article>
+        `;
+    }).join('');
+
+    list.innerHTML = html;
+    bindDraftItemEvents();
+}
+
+// 绑定草稿操作事件
+function bindDraftItemEvents() {
+    const openButtons = document.querySelectorAll('.draft-open-btn');
+    const deleteButtons = document.querySelectorAll('.draft-delete-btn');
+
+    openButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const draftId = btn.dataset.draftId;
+            if (!draftId) return;
+
+            openDraftForEdit(draftId);
+        });
+    });
+
+    deleteButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const draftId = btn.dataset.draftId;
+            if (!draftId) return;
+
+            deleteDraftItem(draftId);
+        });
+    });
+}
+
+// 继续编辑/删除草稿
+function openDraftForEdit(draftId) {
+    goTo(`/publish?draftId=${encodeURIComponent(draftId)}`);
+}
+
+function deleteDraftItem(draftId) {
+    const nextDraftList = state.draftList.filter((item) => item.id !== draftId);
+
+    localStorage.setItem('draftList', JSON.stringify(nextDraftList));
+    state.draftList = nextDraftList;
+
+    if (state.currentDraftId === draftId) {
+        state.currentDraftId = '';
+    }
+
+    showToast('草稿已删除');
+    renderDraftList();
 }
 
 // 处理图片选择
@@ -1598,6 +2940,7 @@ function renderRecommendPostList() {
 
     bindRecommendPostCardEvents();
     bindRecommendPostActionEvents();
+    updateRecommendListFooter();
 }
 
 // 点击帖子卡片事件
@@ -1733,11 +3076,18 @@ function bindHomeTabs() {
                 recommendPanel.classList.remove('hidden');
                 followPanel.classList.remove('active');
                 followPanel.classList.add('hidden');
+                updateRecommendListFooter();
             } else {
                 followPanel.classList.add('active');
                 followPanel.classList.remove('hidden');
                 recommendPanel.classList.remove('active');
                 recommendPanel.classList.add('hidden');
+
+                if (!state.followPosts.length) {
+                    fetchHomeFollowPosts();
+                } else {
+                    updateFollowListFooter();
+                }
             }
         });
     });
@@ -1778,12 +3128,13 @@ function bindProfileTabs() {
     });
 }
 
+// 消息页切换函数
 function bindMessageTabs() {
     const buttons = document.querySelectorAll('[data-message-tab]');
     const panels = {
         follow: document.querySelector('#message-follow-panel'),
         comment: document.querySelector('#message-comment-panel'),
-        mention: document.querySelector('#message-mention-panel'),
+        like: document.querySelector('#message-like-panel'),
         chat: document.querySelector('#message-chat-panel')
     };
 
@@ -1792,6 +3143,7 @@ function bindMessageTabs() {
             buttons.forEach((item) => item.classList.remove('active'));
 
             Object.values(panels).forEach((panel) => {
+                if (!panel) return;
                 panel.classList.remove('active');
                 panel.classList.add('hidden');
             });
