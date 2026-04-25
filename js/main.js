@@ -28,7 +28,6 @@ const state = {
     searchResultData: null,
     searchHistoryList: [],
     publishImageUrls: [],
-    draftPostData: null,
     commentList: [],
     currentCommentSortType: 1,
     detailIsLiked: false,
@@ -41,6 +40,8 @@ const state = {
     profileIsFollowing: false,
     profileFollowingCount: 0,
     profileFollowerCount: 0,
+    profileLikeCount: 0,
+    profilePostCount: 0,
     profileFollowingIds: [],
     profileFollowerIds: [],
     homeFollowingIds: [],
@@ -63,7 +64,10 @@ const state = {
     commentUnreadCount: 0,
     chatHistoryList: [],
     currentChatUserId: '',
-    chatSocket: null
+    chatSocket: null,
+    settingsEditVisible: false,
+    currentTopicName: '',
+    topicPostList: []
 };
 
 function init() {
@@ -233,8 +237,6 @@ function renderPage(path) {
         fetchLikedPostIds();
         fetchFavoritedPostIds();
         fetchFollowStatus(userId);
-        fetchFollowingCount(userId);
-        fetchFollowerCount(userId);
         fetchFollowingIds(userId);
         fetchFollowerIds(userId);
     }
@@ -254,6 +256,19 @@ function renderPage(path) {
         }
 
         fetchSearchResult(keyword);
+    }
+
+    if (path === '/topic') {
+        const query = getRouteQuery();
+        const topic = query.get('topic') || '';
+
+        if (!topic) {
+            showToast('主题不能为空');
+            return;
+        }
+
+        state.currentTopicName = topic;
+        loadTopicPage(topic);
     }
 
     if (path === '/publish') {
@@ -282,6 +297,10 @@ function renderPage(path) {
         renderChatHeader(userId);
         fetchChatHistory(userId);
         connectChatSocket();
+    }
+
+    if (path === '/settings') {
+        loadSettingsProfileForm();
     }
 }
 
@@ -336,6 +355,14 @@ function updatePageTitle(path) {
 
 function goTo(path) {
     location.hash = `#${path}`;
+}
+
+function showWaterfallAfterRender(list) {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            list.style.visibility = 'visible';
+        });
+    });
 }
 
 async function handleLoginSubmit(event) {
@@ -450,7 +477,7 @@ async function fetchRecommendPosts(reset = false) {
 
         state.hasMoreRecommendPosts = newPosts.length >= state.recommendLimit;
 
-        renderRecommendPostList();
+        renderRecommendPostList(reset);
         syncProfileLikedPosts();
         syncProfileFavoritedPosts();
         updateRecommendListFooter();
@@ -573,20 +600,48 @@ async function fetchHomeFollowPosts() {
     }
 }
 
+function appendToShorterColumn(leftCol, rightCol, cardHtml) {
+    const temp = document.createElement('div');
+    temp.innerHTML = cardHtml.trim();
+
+    const cardEl = temp.firstElementChild;
+    if (!cardEl) return;
+
+    const leftHeight = leftCol.scrollHeight;
+    const rightHeight = rightCol.scrollHeight;
+
+    if (leftHeight <= rightHeight) {
+        leftCol.appendChild(cardEl);
+    } else {
+        rightCol.appendChild(cardEl);
+    }
+}
+
 // 渲染关注列表
-function renderHomeFollowPosts() {
+function renderHomeFollowPosts(shouldHide = true) {
     const list = document.querySelector('#follow-post-list');
-    if (!list) return;
+    const leftCol = document.querySelector('#follow-left-col');
+    const rightCol = document.querySelector('#follow-right-col');
+
+    if (!list || !leftCol || !rightCol) return;
+
+    if (shouldHide) {
+        list.style.visibility = 'hidden';
+    }
 
     if (!state.followPosts.length) {
         list.innerHTML = '<div class="empty-block">暂无关注内容，快去关注一些用户吧</div>';
+        list.style.visibility = 'visible';
         updateFollowListFooter();
         return;
     }
 
+    leftCol.innerHTML = '';
+    rightCol.innerHTML = '';
+
     const visiblePosts = state.followPosts.slice(0, state.followVisibleCount);
 
-    const html = visiblePosts.map((item) => {
+    visiblePosts.forEach((item) => {
         const imageList = item.images ? item.images.split(',') : [];
         const cover = imageList[0] || '';
         const title = item.title || '未命名帖子';
@@ -597,37 +652,44 @@ function renderHomeFollowPosts() {
         const favCount = item.favCount ?? 0;
         const commentCount = item.commentCount ?? 0;
 
-        return `
-      <article class="post-card follow-post-card" data-post-id="${item.postId}">
-        <div class="post-card__cover-wrap">
-          ${cover
+        const cardHtml = `
+        <article class="post-card follow-post-card" data-post-id="${item.postId}">
+            <div class="post-card__cover-wrap">
+                ${cover
                 ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
                 : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
             }
-        </div>
+            </div>
 
-        <div class="post-card__body">
-          <h3 class="post-card__title">${escapeHTML(title)}</h3>
-          <p class="post-card__content">${escapeHTML(content)}</p>
+            <div class="post-card__body">
+                <h3 class="post-card__title">${escapeHTML(title)}</h3>
+                <p class="post-card__content">${escapeHTML(content)}</p>
 
-          <div class="post-card__meta">
-            <span>#${escapeHTML(topic)}</span>
-            <span>${escapeHTML(location)}</span>
-          </div>
+                <div class="post-card__meta">
+                    <span>#${escapeHTML(topic)}</span>
+                    <span>${escapeHTML(location)}</span>
+                </div>
 
-          <div class="post-card__stats">
-            <span>赞 ${likeCount}</span>
-            <span>藏 ${favCount}</span>
-            <span>评 ${commentCount}</span>
-          </div>
-        </div>
-      </article>
+                <div class="post-card__stats">
+                    <span>赞 ${likeCount}</span>
+                    <span>藏 ${favCount}</span>
+                    <span>评 ${commentCount}</span>
+                </div>
+            </div>
+        </article>
     `;
-    }).join('');
 
-    list.innerHTML = html;
+        appendToShorterColumn(leftCol, rightCol, cardHtml);
+    });
+
     bindFollowPostCardEvents();
     updateFollowListFooter();
+
+    if (shouldHide) {
+        showWaterfallAfterRender(list);
+    } else {
+        list.style.visibility = 'visible';
+    }
 }
 
 // 加载更多关注内容
@@ -640,7 +702,7 @@ function loadMoreFollowPosts() {
     state.followVisibleCount += state.followPageSize;
     state.hasMoreFollowPosts = state.followVisibleCount < state.followPosts.length;
 
-    renderHomeFollowPosts();
+    renderHomeFollowPosts(false);
     state.isFollowLoadingMore = false;
 }
 
@@ -789,7 +851,9 @@ function renderPostDetail() {
 
     if (topicList) {
         topicList.innerHTML = `
-      <button class="topic-chip" type="button">#${escapeHTML(topic)}</button>
+      <button class="topic-chip detail-topic-btn" type="button" data-topic="${escapeHTML(topic)}">
+        #${escapeHTML(topic)}
+      </button>
     `;
     }
 
@@ -804,6 +868,21 @@ function renderPostDetail() {
     if (commentBtn) {
         commentBtn.textContent = `评论 ${commentCount}`;
     }
+
+    bindDetailTopicEvents();
+}
+
+// 详情页主题点击
+function bindDetailTopicEvents() {
+    const btn = document.querySelector('.detail-topic-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', () => {
+        const topic = btn.dataset.topic;
+        if (!topic) return;
+
+        goTo(`/topic?topic=${encodeURIComponent(topic)}`);
+    });
 }
 
 async function fetchProfileUser(userId) {
@@ -811,12 +890,9 @@ async function fetchProfileUser(userId) {
         toggleGlobalLoading(true);
 
         const token = getToken();
-        const params = new URLSearchParams({
-            id: String(userId)
-        });
 
-        const response = await fetch(`${BASE_URL}/user/getUserById?${params.toString()}`, {
-            method: 'GET',
+        const response = await fetch(`${BASE_URL}/user/getDetail/${userId}`, {
+            method: 'POST',
             headers: {
                 Authorization: token
             }
@@ -831,6 +907,11 @@ async function fetchProfileUser(userId) {
         }
 
         state.currentProfileUser = result.data || null;
+        state.profilePostCount = result.data?.postCount ?? 0;
+        state.profileLikeCount = result.data?.likeCount ?? 0;
+        state.profileFollowingCount = result.data?.followingCount ?? 0;
+        state.profileFollowerCount = result.data?.followerCount ?? 0;
+
         renderProfileUser();
     } catch (error) {
         console.error('获取用户信息失败:', error);
@@ -892,62 +973,6 @@ async function fetchFollowStatus(userId) {
     } catch (error) {
         console.error('获取关注状态失败:', error);
         showToast('获取关注状态失败，请稍后重试');
-    }
-}
-
-// 获取关注数
-async function fetchFollowingCount(userId) {
-    try {
-        const token = getToken();
-
-        const response = await fetch(`${BASE_URL}/follow/getFollowingCount/${userId}`, {
-            method: 'POST',
-            headers: {
-                Authorization: token
-            }
-        });
-
-        const result = await response.json();
-        console.log('关注数返回结果:', result);
-
-        if (result.code !== 200) {
-            showToast(result.msg || '获取关注数失败');
-            return;
-        }
-
-        state.profileFollowingCount = result.data ?? 0;
-        renderProfileUser();
-    } catch (error) {
-        console.error('获取关注数失败:', error);
-        showToast('获取关注数失败，请稍后重试');
-    }
-}
-
-// 获取粉丝数
-async function fetchFollowerCount(userId) {
-    try {
-        const token = getToken();
-
-        const response = await fetch(`${BASE_URL}/follow/getFollowerCount/${userId}`, {
-            method: 'POST',
-            headers: {
-                Authorization: token
-            }
-        });
-
-        const result = await response.json();
-        console.log('粉丝数返回结果:', result);
-
-        if (result.code !== 200) {
-            showToast(result.msg || '获取粉丝数失败');
-            return;
-        }
-
-        state.profileFollowerCount = result.data ?? 0;
-        renderProfileUser();
-    } catch (error) {
-        console.error('获取粉丝数失败:', error);
-        showToast('获取粉丝数失败，请稍后重试');
     }
 }
 
@@ -1143,7 +1168,6 @@ function renderProfileUser() {
 
     const currentUserId = localStorage.getItem('userId');
     const isSelf = String(user.userId) === String(currentUserId);
-    const postCount = state.profilePosts.length;
 
     if (cover) {
         cover.innerHTML = user.background
@@ -1168,11 +1192,11 @@ function renderProfileUser() {
     if (stats) {
         stats.innerHTML = `
       <div class="profile-stat-item">
-        <strong>${postCount}</strong>
+        <strong>${state.profilePostCount}</strong>
         <span>帖子</span>
       </div>
       <div class="profile-stat-item">
-        <strong>0</strong>
+        <strong>${state.profileLikeCount}</strong>
         <span>获赞</span>
       </div>
       <div class="profile-stat-item">
@@ -1484,9 +1508,7 @@ async function handleFollowToggle() {
         showToast(wasFollowing ? '已取消关注' : '关注成功');
 
         fetchFollowStatus(userId);
-        fetchFollowingCount(userId);
-        fetchFollowerCount(userId);
-        renderProfileUser();
+        fetchProfileUser(userId);
     } catch (error) {
         console.error('关注操作失败:', error);
         showToast('操作失败，请稍后重试');
@@ -1574,6 +1596,168 @@ function renderSearchRecommend() {
     bindSearchRecommendEvents();
 }
 
+
+// 获取主题帖子
+async function loadTopicPage(topic) {
+    try {
+        toggleGlobalLoading(true);
+
+        const token = getToken();
+        const params = new URLSearchParams({
+            lastPostId: '0',
+            limit: '100'
+        });
+
+        const response = await fetch(`${BASE_URL}/post/all?${params.toString()}`, {
+            method: 'GET',
+            headers: {
+                Authorization: token
+            }
+        });
+
+        const result = await response.json();
+        console.log('主题页帖子返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '获取主题帖子失败');
+            return;
+        }
+
+        const allPosts = Array.isArray(result.data) ? result.data : [];
+
+        state.topicPostList = allPosts.filter((item) => {
+            return String(item.topic || '').trim() === String(topic).trim();
+        });
+
+        renderTopicPage();
+    } catch (error) {
+        console.error('获取主题帖子失败:', error);
+        showToast('获取主题帖子失败，请稍后重试');
+    } finally {
+        toggleGlobalLoading(false);
+    }
+}
+
+// 渲染主题页
+function renderTopicPage() {
+    const topic = state.currentTopicName || '';
+    const title = document.querySelector('#topic-page-title');
+    const topicName = document.querySelector('#topic-name');
+    const postCount = document.querySelector('#topic-post-count');
+    const relatedList = document.querySelector('#related-topic-list');
+    const postList = document.querySelector('#topic-post-list');
+
+    if (title) {
+        title.textContent = `${topic} 主题`;
+    }
+
+    if (topicName) {
+        topicName.textContent = `#${topic}`;
+    }
+
+    if (postCount) {
+        postCount.textContent = `${state.topicPostList.length} 篇帖子`;
+    }
+
+    if (relatedList) {
+        const sourcePosts = Array.isArray(state.recommendPosts) ? state.recommendPosts : [];
+        const allTopics = [...new Set(
+            sourcePosts
+                .map((item) => String(item.topic || '').trim())
+                .filter((item) => item && item !== topic)
+        )].slice(0, 6);
+
+        if (!allTopics.length) {
+            relatedList.innerHTML = '<span class="search-tag-btn">暂无相关主题</span>';
+        } else {
+            relatedList.innerHTML = allTopics.map((item) => {
+                return `<button class="search-tag-btn related-topic-btn" type="button" data-topic="${escapeHTML(item)}">#${escapeHTML(item)}</button>`;
+            }).join('');
+        }
+    }
+
+    if (!postList) return;
+
+    if (!state.topicPostList.length) {
+        postList.innerHTML = '<div class="empty-block">这个主题下还没有帖子</div>';
+        bindRelatedTopicEvents();
+        return;
+    }
+
+    const html = state.topicPostList.map((item) => {
+        const imageList = item.images ? item.images.split(',') : [];
+        const cover = imageList[0] || '';
+        const title = item.title || '未命名帖子';
+        const content = item.content || '';
+        const topic = item.topic || '未分类';
+        const location = item.location || '未知地点';
+        const likeCount = item.likeCount ?? 0;
+        const favCount = item.favCount ?? 0;
+        const commentCount = item.commentCount ?? 0;
+
+        return `
+            <article class="post-card topic-post-card" data-post-id="${item.postId}">
+                <div class="post-card__cover-wrap">
+                    ${cover
+                ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
+                : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
+            }
+                </div>
+
+                <div class="post-card__body">
+                    <h3 class="post-card__title">${escapeHTML(title)}</h3>
+                    <p class="post-card__content">${escapeHTML(content)}</p>
+
+                    <div class="post-card__meta">
+                        <span>#${escapeHTML(topic)}</span>
+                        <span>${escapeHTML(location)}</span>
+                    </div>
+
+                    <div class="post-card__stats">
+                        <span>赞 ${likeCount}</span>
+                        <span>藏 ${favCount}</span>
+                        <span>评 ${commentCount}</span>
+                    </div>
+                </div>
+            </article>
+        `;
+    }).join('');
+
+    postList.innerHTML = html;
+
+    bindTopicPostCardEvents();
+    bindRelatedTopicEvents();
+}
+
+// 主题点击
+function bindTopicPostCardEvents() {
+    const cards = document.querySelectorAll('#topic-post-list .topic-post-card');
+
+    cards.forEach((card) => {
+        card.addEventListener('click', () => {
+            const postId = card.dataset.postId;
+            if (!postId) return;
+
+            goTo(`/post-detail?id=${postId}`);
+        });
+    });
+}
+
+
+// 相关主题点击
+function bindRelatedTopicEvents() {
+    const buttons = document.querySelectorAll('.related-topic-btn');
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const topic = btn.dataset.topic;
+            if (!topic) return;
+
+            goTo(`/topic?topic=${encodeURIComponent(topic)}`);
+        });
+    });
+}
+
 // 推荐词点击
 function bindSearchRecommendEvents() {
     const buttons = document.querySelectorAll('#search-suggest-list .search-tag-btn');
@@ -1615,6 +1799,7 @@ async function fetchSearchResult(keyword) {
 
         const result = await response.json();
         console.log('搜索结果返回结果:', result);
+        console.log('搜索结果第一条:', result.data?.postLists?.[0]);
 
         if (result.code !== 200) {
             showToast(result.msg || '搜索失败');
@@ -1650,24 +1835,47 @@ function renderSearchResult(keyword = '') {
     }
 
     const html = postList.map((item) => {
+        const postId = item.postId || item.id || item.postID || item.post_id || '';
         const title = item.title || '未命名内容';
         const content = item.content || '';
         const image = item.image || '';
         const createTime = item.createTime || '';
+        const topic = item.topic || '';
 
         return `
-            <article class="search-result-card">
-                <div class="search-result-card__body">
-                    <h3 class="search-result-card__title">${escapeHTML(title)}</h3>
-                    <p class="search-result-card__content">${escapeHTML(content)}</p>
-                    <p class="search-result-card__time">${escapeHTML(createTime)}</p>
-                </div>
-                ${image ? `<img class="search-result-card__image" src="${image}" alt="${escapeHTML(title)}">` : ''}
-            </article>
-        `;
+        <article class="search-result-card" data-post-id="${postId}">
+            <div class="search-result-card__body">
+                <h3 class="search-result-card__title">${escapeHTML(title)}</h3>
+                <p class="search-result-card__content">${escapeHTML(content)}</p>
+                ${topic
+                ? `<button class="topic-chip search-result-topic-btn" type="button" data-topic="${escapeHTML(topic)}">#${escapeHTML(topic)}</button>`
+                : ''
+            }
+                <p class="search-result-card__time">${escapeHTML(createTime)}</p>
+            </div>
+            ${image ? `<img class="search-result-card__image" src="${image}" alt="${escapeHTML(title)}">` : ''}
+        </article>
+    `;
     }).join('');
 
     list.innerHTML = html;
+    bindSearchResultTopicEvents();
+}
+
+// 搜索结果主题点击
+function bindSearchResultTopicEvents() {
+    const buttons = document.querySelectorAll('.search-result-topic-btn');
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+
+            const topic = btn.dataset.topic;
+            if (!topic) return;
+
+            goTo(`/topic?topic=${encodeURIComponent(topic)}`);
+        });
+    });
 }
 
 // 获取消息
@@ -1784,7 +1992,7 @@ function connectChatSocket() {
         try {
             const data = JSON.parse(event.data);
 
-            if (data.content) {
+            if (Number(data.type) === 0 && data.content) {
                 state.chatHistoryList.push({
                     chatMsgId: data.chatMsgId || `ws_${Date.now()}`,
                     senderId: data.senderId,
@@ -1794,6 +2002,12 @@ function connectChatSocket() {
                 });
 
                 renderChatHistory();
+                return;
+            }
+
+            if (Number(data.type) === 2) {
+                showToast(data.content || '对方当前未连接');
+                return;
             }
         } catch (error) {
             console.error('解析聊天消息失败:', error);
@@ -2243,10 +2457,14 @@ async function handlePublishSubmit(event) {
 
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
+    const topicInput = document.querySelector('#publish-topic');
+    const locationInput = document.querySelector('#publish-location');
     const permissionSelect = document.querySelector('#publish-permission');
 
     const title = titleInput?.value.trim() || '';
     const content = contentInput?.value.trim() || '';
+    const topic = topicInput?.value.trim() || '';
+    const location = locationInput?.value.trim() || '';
     const permissionValue = permissionSelect?.value || 'public';
 
     if (!title) {
@@ -2269,8 +2487,8 @@ async function handlePublishSubmit(event) {
         title,
         content,
         images: state.publishImageUrls.join(','),
-        topic: '',
-        location: '',
+        topic,
+        location,
         permission: permissionMap[permissionValue] || 1
     };
 
@@ -2313,10 +2531,14 @@ async function handlePublishSubmit(event) {
 function saveDraftPost() {
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
+    const topicInput = document.querySelector('#publish-topic');
+    const locationInput = document.querySelector('#publish-location');
     const permissionSelect = document.querySelector('#publish-permission');
 
     const title = titleInput?.value.trim() || '';
     const content = contentInput?.value.trim() || '';
+    const topic = topicInput?.value.trim() || '';
+    const location = locationInput?.value.trim() || '';
     const permission = permissionSelect?.value || 'public';
 
     const draftList = JSON.parse(localStorage.getItem('draftList') || '[]');
@@ -2328,6 +2550,8 @@ function saveDraftPost() {
         id: draftId,
         title,
         content,
+        topic,
+        location,
         permission,
         images: [...state.publishImageUrls],
         updateTime: new Date().toISOString()
@@ -2361,11 +2585,15 @@ function renderDraftToPublishForm() {
 
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
+    const topicInput = document.querySelector('#publish-topic');
+    const locationInput = document.querySelector('#publish-location');
     const permissionSelect = document.querySelector('#publish-permission');
 
     if (!draftId) {
         if (titleInput) titleInput.value = '';
         if (contentInput) contentInput.value = '';
+        if (topicInput) topicInput.value = '';
+        if (locationInput) locationInput.value = '';
         if (permissionSelect) permissionSelect.value = 'public';
 
         state.publishImageUrls = [];
@@ -2379,6 +2607,8 @@ function renderDraftToPublishForm() {
     if (!currentDraft) {
         if (titleInput) titleInput.value = '';
         if (contentInput) contentInput.value = '';
+        if (topicInput) topicInput.value = currentDraft.topic || '';
+        if (locationInput) locationInput.value = currentDraft.location || '';
         if (permissionSelect) permissionSelect.value = 'public';
 
         state.publishImageUrls = [];
@@ -2389,6 +2619,8 @@ function renderDraftToPublishForm() {
 
     if (titleInput) titleInput.value = currentDraft.title || '';
     if (contentInput) contentInput.value = currentDraft.content || '';
+    if (topicInput) topicInput.value = currentDraft.topic || '';
+    if (locationInput) locationInput.value = currentDraft.location || '';
     if (permissionSelect) permissionSelect.value = currentDraft.permission || 'public';
 
     state.publishImageUrls = Array.isArray(currentDraft.images) ? currentDraft.images : [];
@@ -2413,11 +2645,15 @@ function clearDraftPost() {
 function resetPublishForm() {
     const titleInput = document.querySelector('#publish-title');
     const contentInput = document.querySelector('#publish-content');
+    const topicInput = document.querySelector('#publish-topic');
+    const locationInput = document.querySelector('#publish-location');
     const permissionSelect = document.querySelector('#publish-permission');
     const publishImageInput = document.querySelector('#publish-image-input');
 
     if (titleInput) titleInput.value = '';
     if (contentInput) contentInput.value = '';
+    if (topicInput) topicInput.value = '';
+    if (locationInput) locationInput.value = '';
     if (permissionSelect) permissionSelect.value = 'public';
     if (publishImageInput) publishImageInput.value = '';
 
@@ -2939,16 +3175,27 @@ async function handleCommentDelete(commentId) {
 }
 
 // 渲染帖子列表
-function renderRecommendPostList() {
+function renderRecommendPostList(shouldHide = true) {
     const list = document.querySelector('#recommend-post-list');
-    if (!list) return;
+    const leftCol = document.querySelector('#recommend-left-col');
+    const rightCol = document.querySelector('#recommend-right-col');
+
+    if (!list || !leftCol || !rightCol) return;
+
+    if (shouldHide) {
+        list.style.visibility = 'hidden';
+    }
 
     if (!state.recommendPosts.length) {
         list.innerHTML = '<div class="empty-block">暂无帖子内容</div>';
+        list.style.visibility = 'visible';
         return;
     }
 
-    const html = state.recommendPosts.map((item) => {
+    leftCol.innerHTML = '';
+    rightCol.innerHTML = '';
+
+    state.recommendPosts.forEach((item) => {
         const imageList = item.images ? item.images.split(',') : [];
         const cover = imageList[0] || '';
         const title = item.title || '未命名帖子';
@@ -2968,60 +3215,65 @@ function renderRecommendPostList() {
 
         const isFavored = state.favoriteStatusMap[String(item.postId)] ?? backendFavored;
 
-        return `
-      <article class="post-card" data-post-id="${item.postId}">
-        <div class="post-card__cover-wrap">
-          ${cover
+        const cardHtml = `
+            <article class="post-card recommend-post-card" data-post-id="${item.postId}">
+                <div class="post-card__cover-wrap">
+                    ${cover
                 ? `<img class="post-card__cover" src="${cover}" alt="${escapeHTML(title)}">`
                 : `<div class="post-card__cover post-card__cover--empty">暂无图片</div>`
             }
-        </div>
+                </div>
 
-        <div class="post-card__body">
-          <h3 class="post-card__title">${escapeHTML(title)}</h3>
-          <p class="post-card__content">${escapeHTML(content)}</p>
+                <div class="post-card__body">
+                    <h3 class="post-card__title">${escapeHTML(title)}</h3>
+                    <p class="post-card__content">${escapeHTML(content)}</p>
 
-          <div class="post-card__meta">
-            <span>#${escapeHTML(topic)}</span>
-            <span>${escapeHTML(location)}</span>
-          </div>
+                    <div class="post-card__meta">
+                        <span>#${escapeHTML(topic)}</span>
+                        <span>${escapeHTML(location)}</span>
+                    </div>
 
-          <div class="post-card__stats">
-            <button
-              class="post-stat-btn recommend-like-btn"
-              type="button"
-              data-post-id="${item.postId}"
-              data-liked="${isLiked ? '1' : '0'}"
-            >
-              ${isLiked ? '已赞' : '赞'} ${likeCount}
-            </button>
+                    <div class="post-card__stats">
+                        <button
+                            class="post-stat-btn recommend-like-btn"
+                            type="button"
+                            data-post-id="${item.postId}"
+                            data-liked="${isLiked ? '1' : '0'}"
+                        >
+                            ${isLiked ? '已赞' : '赞'} ${likeCount}
+                        </button>
 
-            <button
-              class="post-stat-btn recommend-favorite-btn"
-              type="button"
-              data-post-id="${item.postId}"
-              data-favored="${isFavored ? '1' : '0'}"
-            >
-              ${isFavored ? '已藏' : '藏'} ${favCount}
-            </button>
+                        <button
+                            class="post-stat-btn recommend-favorite-btn"
+                            type="button"
+                            data-post-id="${item.postId}"
+                            data-favored="${isFavored ? '1' : '0'}"
+                        >
+                            ${isFavored ? '已藏' : '藏'} ${favCount}
+                        </button>
 
-            <span>评 ${commentCount}</span>
-          </div>
-        </div>
-      </article>
-    `;
-    }).join('');
+                        <span>评 ${commentCount}</span>
+                    </div>
+                </div>
+            </article>
+        `;
 
-    list.innerHTML = html;
+        appendToShorterColumn(leftCol, rightCol, cardHtml);
+    });
 
     bindRecommendPostCardEvents();
     bindRecommendPostActionEvents();
     updateRecommendListFooter();
+    if (shouldHide) {
+        showWaterfallAfterRender(list);
+    } else {
+        list.style.visibility = 'visible';
+    }
 }
 
 // 点击帖子卡片事件
 function bindRecommendPostCardEvents() {
-    const cards = document.querySelectorAll('.post-card');
+    const cards = document.querySelectorAll('.recommend-post-card');
 
     cards.forEach((card) => {
         card.addEventListener('click', () => {
@@ -3152,7 +3404,11 @@ function bindHomeTabs() {
                 recommendPanel.classList.remove('hidden');
                 followPanel.classList.remove('active');
                 followPanel.classList.add('hidden');
-                updateRecommendListFooter();
+
+                requestAnimationFrame(() => {
+                    renderRecommendPostList();
+                    updateRecommendListFooter();
+                });
             } else {
                 followPanel.classList.add('active');
                 followPanel.classList.remove('hidden');
@@ -3162,7 +3418,10 @@ function bindHomeTabs() {
                 if (!state.followPosts.length) {
                     fetchHomeFollowPosts();
                 } else {
-                    updateFollowListFooter();
+                    requestAnimationFrame(() => {
+                        renderHomeFollowPosts(true);
+                        updateFollowListFooter();
+                    });
                 }
             }
         });
@@ -3304,6 +3563,9 @@ function bindPasswordToggle() {
 function bindSettingsEvents() {
     const logoutBtn = document.querySelector('#logout-btn');
     const profileSettingsBtn = document.querySelector('#profile-settings-btn');
+    const editProfileBtn = document.querySelector('#edit-profile-btn');
+    const cancelEditBtn = document.querySelector('#cancel-edit-profile-btn');
+    const saveEditBtn = document.querySelector('#save-edit-profile-btn');
 
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
@@ -3321,6 +3583,135 @@ function bindSettingsEvents() {
         profileSettingsBtn.addEventListener('click', () => {
             goTo('/settings');
         });
+    }
+
+    if (editProfileBtn) {
+        editProfileBtn.addEventListener('click', () => {
+            state.settingsEditVisible = true;
+            renderSettingsEditPanel();
+            loadSettingsProfileForm();
+        });
+    }
+
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', () => {
+            state.settingsEditVisible = false;
+            renderSettingsEditPanel();
+        });
+    }
+
+    if (saveEditBtn) {
+        saveEditBtn.addEventListener('click', () => {
+            handleSaveProfileSettings();
+        });
+    }
+}
+
+// 控制设置编辑面版显示
+function renderSettingsEditPanel() {
+    const panel = document.querySelector('#settings-edit-panel');
+    if (!panel) return;
+
+    if (state.settingsEditVisible) {
+        panel.classList.remove('hidden');
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+// 回填当前登陆用户资料
+function loadSettingsProfileForm() {
+    const currentUserId = localStorage.getItem('userId');
+    if (!currentUserId) return;
+
+    if (!state.currentProfileUser || String(state.currentProfileUser.userId) !== String(currentUserId)) {
+        fetchProfileUser(currentUserId).then(() => {
+            fillSettingsProfileForm();
+        });
+        return;
+    }
+
+    fillSettingsProfileForm();
+}
+
+// 填表单
+function fillSettingsProfileForm() {
+    const user = state.currentProfileUser;
+    if (!user) return;
+
+    const nameInput = document.querySelector('#settings-user-name');
+    const signatureInput = document.querySelector('#settings-user-signature');
+    const avatarInput = document.querySelector('#settings-user-avatar');
+    const backgroundInput = document.querySelector('#settings-user-background');
+
+    if (nameInput) nameInput.value = user.userName || '';
+    if (signatureInput) signatureInput.value = user.signature || '';
+    if (avatarInput) avatarInput.value = user.image || '';
+    if (backgroundInput) backgroundInput.value = user.background || '';
+
+    renderSettingsEditPanel();
+}
+
+// 保存资料
+async function handleSaveProfileSettings() {
+    const currentUserId = localStorage.getItem('userId');
+    if (!currentUserId) {
+        showToast('用户未登录');
+        return;
+    }
+
+    const userName = document.querySelector('#settings-user-name')?.value.trim() || '';
+    const signature = document.querySelector('#settings-user-signature')?.value.trim() || '';
+    const image = document.querySelector('#settings-user-avatar')?.value.trim() || '';
+    const background = document.querySelector('#settings-user-background')?.value.trim() || '';
+
+    if (!userName) {
+        showToast('昵称不能为空');
+        return;
+    }
+
+    try {
+        toggleGlobalLoading(true);
+
+        const token = getToken();
+
+        const response = await fetch(`${BASE_URL}/user/update`, {
+            method: 'POST',
+            headers: {
+                Authorization: token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId: Number(currentUserId),
+                userName,
+                signature,
+                image,
+                background
+            })
+        });
+
+        const result = await response.json();
+        console.log('更新用户资料返回结果:', result);
+
+        if (result.code !== 200) {
+            showToast(result.msg || '保存失败');
+            return;
+        }
+
+        showToast('资料保存成功');
+        state.settingsEditVisible = false;
+        renderSettingsEditPanel();
+
+        await fetchProfileUser(currentUserId);
+
+        if (state.currentRoute === '/settings') {
+            fillSettingsProfileForm();
+        }
+    } catch (error) {
+        console.error('更新用户资料失败:', error);
+        showToast('保存失败，请稍后重试');
+    } finally {
+        toggleGlobalLoading(false);
     }
 }
 

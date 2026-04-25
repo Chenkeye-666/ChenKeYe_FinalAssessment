@@ -81,12 +81,18 @@
 
             <main class="page-content page-content--with-tabbar">
                 <section id="home-recommend-panel" class="tab-panel active">
-                    <div id="recommend-post-list" class="waterfall-list"></div>
+                    <div id="recommend-post-list" class="waterfall-list">
+                        <div id="recommend-left-col" class="waterfall-col"></div>
+                        <div id="recommend-right-col" class="waterfall-col"></div>
+                    </div>
                     <div class="list-footer">上拉加载更多</div>
                 </section>
 
                 <section id="home-follow-panel" class="tab-panel hidden">
-                    <div id="follow-post-list" class="waterfall-list"></div>
+                    <div id="follow-post-list" class="waterfall-list">
+                        <div id="follow-left-col" class="waterfall-col"></div>
+                        <div id="follow-right-col" class="waterfall-col"></div>
+                    </div>
                     <div class="list-footer">上拉加载更多</div>
                 </section>
             </main>
@@ -147,6 +153,16 @@
                     <div class="form-item">
                         <label for="publish-content">正文</label>
                         <textarea id="publish-content" placeholder="分享一下此刻的想法吧..." maxlength="2000"></textarea>
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-topic">主题</label>
+                        <input id="publish-topic" type="text" placeholder="请输入主题，例如：校园日常" maxlength="20" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-location">地点</label>
+                        <input id="publish-location" type="text" placeholder="请输入地点，例如：图书馆" maxlength="30" />
                     </div>
 
                     <div class="publish-toolbar">
@@ -337,6 +353,33 @@
                     <button id="edit-profile-btn" class="settings-item" type="button">编辑资料</button>
                     <button id="theme-toggle-btn" class="settings-item" type="button">切换主题</button>
                     <button id="logout-btn" class="settings-item settings-item--danger" type="button">退出登录</button>
+                </div>
+
+                <div id="settings-edit-panel" class="settings-edit-panel hidden">
+                    <div class="form-item">
+                        <label for="settings-user-name">昵称</label>
+                        <input id="settings-user-name" type="text" placeholder="请输入昵称" maxlength="20" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="settings-user-signature">个性签名</label>
+                        <textarea id="settings-user-signature" placeholder="请输入个性签名" maxlength="100"></textarea>
+                    </div>
+
+                    <div class="form-item">
+                        <label for="settings-user-avatar">头像地址</label>
+                        <input id="settings-user-avatar" type="text" placeholder="请输入头像图片地址" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="settings-user-background">背景图地址</label>
+                        <input id="settings-user-background" type="text" placeholder="请输入背景图地址" />
+                    </div>
+
+                    <div class="settings-edit-actions">
+                        <button id="cancel-edit-profile-btn" class="secondary-btn" type="button">取消</button>
+                        <button id="save-edit-profile-btn" class="primary-btn" type="button">保存资料</button>
+                    </div>
                 </div>
             </main>
         </section>
