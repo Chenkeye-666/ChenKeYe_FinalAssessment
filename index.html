@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-Cn">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="format-detection" content="telephone=no,email=no,address=no" />
+    <link rel="stylesheet" href="./css/reset.css" />
+    <link rel="stylesheet" href="./css/common.css" />
+    <link rel="stylesheet" href="./css/index.css" />
+    <title>类社交APP移动端核心网页开发</title>
+</head>
+
+<body>
+    <div id="app" class="app-shell">
+        <!-- 全局加载 -->
+        <div id="global-loading" class="global-loading hidden">
+            <div class="loading-spinner"></div>
+            <p>加载中...</p>
+        </div>
+
+        <!-- 全局提示 -->
+        <div id="global-toast" class="global-toast hidden"></div>
+
+        <!-- 登录页 -->
+        <section id="page-login" class="page active" data-route="/login">
+            <div class="page-login__container">
+                <input id="login-lamp-toggle" class="login-lamp-toggle" type="checkbox" />
+
+                <div class="login-lamp-scene">
+                    <div class="login-lamp__wire" aria-hidden="true"></div>
+                    <div class="login-lamp__shade" aria-hidden="true">
+                        <span class="login-lamp__eye login-lamp__eye--left"></span>
+                        <span class="login-lamp__eye login-lamp__eye--right"></span>
+                    </div>
+                    <div class="login-lamp__bulb" aria-hidden="true"></div>
+                    <label class="login-lamp__cord" for="login-lamp-toggle" aria-label="拉一下开灯">
+                        <span class="login-lamp__cord-handle"></span>
+                    </label>
+                    <div class="login-lamp__light" aria-hidden="true"></div>
+                    <p class="login-lamp__hint">拉一下开灯</p>
+                </div>
+
+                <div class="login-lamp-content">
+                    <div class="brand-block">
+                    <h1 class="brand-title">RDC 社区</h1>
+                    <p class="brand-subtitle">社交APP 移动端考核项目</p>
+                </div>
+
+                <form id="login-form" class="form-card" autocomplete="off">
+                    <div class="form-item">
+                        <label for="login-account">账号</label>
+                        <input id="login-account" name="account" type="text" placeholder="请输入学号账号" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="login-password">密码</label>
+                        <div class="password-wrapper">
+                            <input id="login-password" name="password" type="password" placeholder="请输入密码" />
+                            <button id="toggle-password-btn" class="password-toggle-btn" type="button" aria-label="显示密码" title="显示密码"></button>
+                        </div>
+                    </div>
+
+                    <div class="form-actions form-actions--between">
+                        <label class="checkbox-row">
+                            <input id="remember-password" type="checkbox" />
+                            <span>记住密码</span>
+                        </label>
+                        <button id="switch-history-account-btn" class="text-btn" type="button">历史账号</button>
+                    </div>
+
+                    <button id="login-submit-btn" class="primary-btn" type="submit">登录</button>
+                </form>
+
+                    <div id="history-account-panel" class="popup-panel hidden">
+                        <div class="popup-panel__header">
+                        <h3>历史登录账号</h3>
+                        <button id="close-history-account-btn" class="icon-btn" type="button">×</button>
+                    </div>
+                        <ul id="history-account-list" class="history-list"></ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 首页 -->
+        <section id="page-home" class="page" data-route="/home">
+            <header class="home-sticky-header safe-top">
+                <div class="home-title-tabs">
+                    <h2 class="home-title">首页</h2>
+
+                    <div class="home-text-tabs" id="home-tabs">
+                        <button class="home-text-tab active" data-home-tab="recommend" type="button">推荐</button>
+                        <button class="home-text-tab" data-home-tab="follow" type="button">关注</button>
+                    </div>
+                </div>
+
+                <button id="go-search-btn" class="home-search-btn" type="button">搜索</button>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <section id="home-recommend-panel" class="tab-panel active">
+                    <div id="recommend-post-list" class="waterfall-list">
+                        <div id="recommend-left-col" class="waterfall-col"></div>
+                        <div id="recommend-right-col" class="waterfall-col"></div>
+                    </div>
+                    <div class="list-footer">上拉加载更多</div>
+                </section>
+
+                <section id="home-follow-panel" class="tab-panel hidden">
+                    <div id="follow-post-list" class="waterfall-list">
+                        <div id="follow-left-col" class="waterfall-col"></div>
+                        <div id="follow-right-col" class="waterfall-col"></div>
+                    </div>
+                    <div class="list-footer">上拉加载更多</div>
+                </section>
+            </main>
+        </section>
+
+        <!-- 帖子详情页 -->
+        <section id="page-post-detail" class="page" data-route="/post-detail">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 class="topbar-title">帖子详情</h2>
+                <button id="post-more-btn" class="icon-btn" type="button">更多</button>
+            </header>
+
+            <main class="page-content page-content--with-actionbar">
+                <article class="detail-card">
+                    <div id="post-author-card" class="user-card"></div>
+                    <div id="post-swiper" class="detail-swiper"></div>
+                    <div id="post-detail-content" class="detail-content"></div>
+                    <div id="post-topic-list" class="topic-list"></div>
+                </article>
+
+                <section class="comment-section">
+                    <div class="section-header">
+                        <h3>评论</h3>
+                        <button id="comment-sort-btn" class="text-btn" type="button">排序</button>
+                    </div>
+                    <div id="comment-list" class="comment-list"></div>
+                </section>
+            </main>
+
+            <div class="bottom-actionbar safe-bottom bottom-actionbar--detail">
+                <button id="detail-like-btn" class="action-btn" type="button">点赞</button>
+                <button id="detail-favorite-btn" class="action-btn" type="button">收藏</button>
+                <button id="detail-comment-btn" class="action-btn" type="button">评论</button>
+
+                <div class="detail-comment-box">
+                    <input id="detail-comment-input" class="detail-comment-input" type="text" placeholder="写下你的评论..." />
+                    <button id="detail-comment-cancel-reply-btn" class="secondary-btn secondary-btn--small hidden"
+                        type="button">
+                        取消回复
+                    </button>
+                    <button id="detail-comment-send-btn" class="primary-btn primary-btn--small" type="button">
+                        发送
+                    </button>
+                </div>
+            </div>
+
+            <div id="post-action-sheet" class="action-sheet hidden">
+                <div id="post-action-sheet-mask" class="action-sheet__mask"></div>
+
+                <div class="action-sheet__panel safe-bottom">
+                    <button id="post-action-edit-btn" class="action-sheet__item" type="button">
+                        编辑帖子
+                    </button>
+
+                    <button id="post-action-delete-btn" class="action-sheet__item action-sheet__item--danger"
+                        type="button">
+                        删除帖子
+                    </button>
+
+                    <button id="post-action-cancel-btn" class="action-sheet__cancel" type="button">
+                        取消
+                    </button>
+                </div>
+            </div>
+
+            <div id="post-delete-confirm" class="confirm-dialog hidden">
+                <div id="post-delete-confirm-mask" class="confirm-dialog__mask"></div>
+
+                <div class="confirm-dialog__panel">
+                    <h3 class="confirm-dialog__title">删除帖子</h3>
+                    <p class="confirm-dialog__text">确定要删除这篇帖子吗？删除后不可恢复。</p>
+
+                    <div class="confirm-dialog__actions">
+                        <button id="post-delete-cancel-btn" class="confirm-dialog__btn" type="button">
+                            取消
+                        </button>
+                        <button id="post-delete-confirm-btn" class="confirm-dialog__btn confirm-dialog__btn--danger"
+                            type="button">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 发布页 -->
+        <section id="page-publish" class="page" data-route="/publish">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 id="publish-page-title" class="topbar-title">发布帖子</h2>
+                <button id="save-draft-btn" class="text-btn" type="button">存草稿</button>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <form id="publish-form" class="publish-form">
+                    <div class="form-item">
+                        <label for="publish-title">标题</label>
+                        <input id="publish-title" type="text" placeholder="请输入标题" maxlength="30" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-content">正文</label>
+                        <textarea id="publish-content" placeholder="分享一下此刻的想法吧..." maxlength="2000"></textarea>
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-topic">主题</label>
+                        <input id="publish-topic" type="text" placeholder="请输入主题，例如：校园日常" maxlength="20" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-location">地点</label>
+                        <input id="publish-location" type="text" placeholder="请输入地点，例如：图书馆" maxlength="30" />
+                    </div>
+
+                    <div class="publish-toolbar">
+                        <button id="insert-topic-btn" type="button" class="tool-btn">#话题</button>
+                        <button id="insert-at-btn" type="button" class="tool-btn">@好友</button>
+                        <button id="insert-emoji-btn" type="button" class="tool-btn">😊</button>
+                    </div>
+
+                    <div class="form-item">
+                        <label>图片</label>
+                        <div id="publish-image-list" class="image-picker-list"></div>
+                        <button id="select-image-btn" class="secondary-btn" type="button">选择图片</button>
+                        <input id="publish-image-input" type="file" accept="image/*" multiple hidden />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="publish-permission">权限</label>
+                        <select id="publish-permission">
+                            <option value="public">公开</option>
+                            <option value="friends">好友可见</option>
+                            <option value="private">私密</option>
+                        </select>
+                    </div>
+
+                    <button id="publish-submit-btn" class="primary-btn" type="submit">立即发布</button>
+                </form>
+            </main>
+        </section>
+
+        <!-- 搜索页 -->
+        <section id="page-search" class="page" data-route="/search">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <div class="searchbar searchbar--main">
+                    <div class="search-input-wrap">
+                        <input id="search-input" type="text" placeholder="搜索帖子 / 用户 / 主题" />
+
+                        <button id="clear-search-input-btn" class="search-clear-btn hidden" type="button"
+                            aria-label="清空搜索内容"></button>
+                    </div>
+
+                    <button id="search-submit-btn" class="search-icon-btn" type="button" aria-label="搜索"></button>
+                </div>
+            </header>
+
+            <main class="page-content">
+                <section class="search-block">
+                    <div class="section-header">
+                        <h3>搜索历史</h3>
+                        <button id="clear-search-history-btn" class="text-btn" type="button">清空历史</button>
+                    </div>
+                    <div id="search-history-list" class="tag-list"></div>
+                </section>
+
+                <section class="search-block">
+                    <div class="section-header">
+                        <h3>搜索推荐</h3>
+                        <button id="more-search-suggest-btn" class="text-btn" type="button">更多</button>
+                    </div>
+                    <div id="search-suggest-list" class="tag-list"></div>
+                </section>
+            </main>
+        </section>
+
+        <!-- 搜索结果页 -->
+        <section id="page-search-result" class="page" data-route="/search-result">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <div class="searchbar searchbar--result">
+                    <div class="search-input-wrap">
+                        <input id="result-search-input" type="text" placeholder="搜索内容" />
+
+                        <button id="clear-result-search-btn" class="search-clear-btn hidden" type="button"
+                            aria-label="清空搜索内容"></button>
+                    </div>
+
+                    <button id="result-search-btn" class="search-icon-btn" type="button" aria-label="搜索"></button>
+                </div>
+            </header>
+
+            <div class="tabs tabs--top">
+                <button class="tab-btn active" data-result-tab="all" type="button">综合</button>
+                <button class="tab-btn" data-result-tab="post" type="button">帖子</button>
+                <button class="tab-btn" data-result-tab="user" type="button">用户</button>
+                <button class="tab-btn" data-result-tab="topic" type="button">主题</button>
+            </div>
+
+            <main class="page-content page-content--with-tabbar">
+                <div class="result-filter-bar">
+                    <button class="filter-btn active" data-sort="latest" type="button">最新发布</button>
+                    <button class="filter-btn" data-sort="likes" type="button">最多点赞</button>
+                </div>
+
+                <div class="result-filter-bar result-filter-bar--sub">
+                    <button class="filter-btn active" data-content-type="all" type="button">全部</button>
+                    <button class="filter-btn" data-content-type="image" type="button">图文</button>
+                    <button class="filter-btn" data-content-type="text" type="button">纯文案</button>
+                </div>
+
+                <div id="search-result-list" class="result-list"></div>
+
+                <button id="search-result-load-more-btn" class="secondary-btn search-result-load-more hidden"
+                    type="button">
+                    加载更多
+                </button>
+            </main>
+        </section>
+
+        <!-- 主题页 -->
+        <section id="page-topic" class="page" data-route="/topic">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 id="topic-page-title" class="topbar-title">主题详情</h2>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <section class="topic-summary-card">
+                    <h3 id="topic-name">#主题</h3>
+                    <p id="topic-post-count">0 篇帖子</p>
+                    <div id="related-topic-list" class="tag-list"></div>
+                </section>
+                <div id="topic-post-list" class="waterfall-list"></div>
+            </main>
+        </section>
+
+        <!-- 个人主页 -->
+        <section id="page-profile" class="page" data-route="/profile">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 class="topbar-title">个人主页</h2>
+                <button id="profile-settings-btn" class="icon-btn" type="button">设置</button>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <section class="profile-header-card">
+                    <div id="profile-cover" class="profile-cover"></div>
+                    <div class="profile-main">
+                        <div id="profile-avatar" class="profile-avatar"></div>
+                        <div class="profile-info">
+                            <h3 id="profile-name">用户名</h3>
+                            <p id="profile-signature">这个人很懒，还没有签名。</p>
+                        </div>
+                    </div>
+
+                    <div id="profile-stat-list" class="profile-stats"></div>
+
+                    <div id="profile-action-row" class="profile-actions">
+                        <button id="follow-user-btn" class="primary-btn" type="button">关注</button>
+                        <button id="chat-user-btn" class="secondary-btn" type="button">私聊</button>
+                    </div>
+                </section>
+
+                <section class="profile-relation-card">
+                    <div class="section-header">
+                        <h3>社交关系</h3>
+                    </div>
+
+                    <div class="profile-relation-actions">
+                        <button id="open-profile-following-btn" class="profile-relation-entry" type="button">
+                            <strong id="profile-following-entry-count">0</strong>
+                            <span>关注</span>
+                        </button>
+
+                        <button id="open-profile-follower-btn" class="profile-relation-entry" type="button">
+                            <strong id="profile-follower-entry-count">0</strong>
+                            <span>粉丝</span>
+                        </button>
+                    </div>
+
+                    <div id="profile-following-panel" class="profile-relation-panel hidden">
+                        <div class="profile-relation-panel__header">
+                            <h3>关注列表</h3>
+                            <button class="text-btn profile-relation-close-btn" type="button">收起</button>
+                        </div>
+                        <div id="profile-following-user-list" class="relation-user-list"></div>
+                    </div>
+
+                    <div id="profile-follower-panel" class="profile-relation-panel hidden">
+                        <div class="profile-relation-panel__header">
+                            <h3>粉丝列表</h3>
+                            <button class="text-btn profile-relation-close-btn" type="button">收起</button>
+                        </div>
+                        <div id="profile-follower-user-list" class="relation-user-list"></div>
+                    </div>
+                </section>
+
+                <div class="tabs tabs--top">
+                    <button class="tab-btn active" data-profile-tab="posts" type="button">帖子</button>
+                    <button class="tab-btn" data-profile-tab="likes" type="button">我的赞</button>
+                    <button class="tab-btn" data-profile-tab="favorites" type="button">收藏</button>
+                </div>
+
+                <section id="profile-posts-panel" class="tab-panel active">
+                    <div id="profile-post-list" class="waterfall-list">
+                        <div id="profile-post-left-col" class="waterfall-col"></div>
+                        <div id="profile-post-right-col" class="waterfall-col"></div>
+                    </div>
+                </section>
+
+                <section id="profile-likes-panel" class="tab-panel hidden">
+                    <div id="profile-liked-list" class="waterfall-list">
+                        <div id="profile-liked-left-col" class="waterfall-col"></div>
+                        <div id="profile-liked-right-col" class="waterfall-col"></div>
+                    </div>
+                </section>
+
+                <section id="profile-favorites-panel" class="tab-panel hidden">
+                    <div id="profile-favorites-list" class="waterfall-list">
+                        <div id="profile-favorite-left-col" class="waterfall-col"></div>
+                        <div id="profile-favorite-right-col" class="waterfall-col"></div>
+                    </div>
+                </section>
+            </main>
+        </section>
+
+        <!-- 草稿箱 -->
+        <section id="page-drafts" class="page" data-route="/drafts">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 class="topbar-title">草稿箱</h2>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <div id="draft-list" class="draft-list"></div>
+            </main>
+        </section>
+
+        <!-- 设置页 -->
+        <section id="page-settings" class="page" data-route="/settings">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 class="topbar-title">设置</h2>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <div id="settings-menu-panel" class="settings-list">
+                    <button id="edit-profile-btn" class="settings-item" type="button">编辑资料</button>
+                    <button id="theme-toggle-btn" class="settings-item" type="button">切换主题</button>
+                    <button id="logout-btn" class="settings-item settings-item--danger" type="button">退出登录</button>
+                </div>
+
+                <div id="settings-edit-panel" class="settings-edit-panel hidden">
+                    <div class="form-item">
+                        <label for="settings-user-name">昵称</label>
+                        <input id="settings-user-name" type="text" placeholder="请输入昵称" maxlength="20" />
+                    </div>
+
+                    <div class="form-item">
+                        <label for="settings-user-signature">个性签名</label>
+                        <textarea id="settings-user-signature" placeholder="请输入个性签名" maxlength="100"></textarea>
+                    </div>
+
+                    <div class="form-item">
+                        <label>头像</label>
+                        <input id="settings-user-avatar" type="hidden" />
+
+                        <div class="settings-image-preview">
+                            <img id="settings-avatar-preview" class="settings-avatar-preview hidden" alt="头像预览">
+                        </div>
+
+                        <button id="select-settings-avatar-btn" class="secondary-btn" type="button">上传头像</button>
+                        <input id="settings-avatar-file" type="file" accept="image/*" hidden />
+                    </div>
+
+                    <div class="form-item">
+                        <label>背景图</label>
+                        <input id="settings-user-background" type="hidden" />
+
+                        <div class="settings-image-preview">
+                            <img id="settings-background-preview" class="settings-background-preview hidden"
+                                alt="背景图预览">
+                        </div>
+
+                        <button id="select-settings-background-btn" class="secondary-btn" type="button">上传背景图</button>
+                        <input id="settings-background-file" type="file" accept="image/*" hidden />
+                    </div>
+
+                    <div class="settings-edit-actions">
+                        <button id="cancel-edit-profile-btn" class="secondary-btn" type="button">取消</button>
+                        <button id="save-edit-profile-btn" class="primary-btn" type="button">保存资料</button>
+                    </div>
+                </div>
+            </main>
+        </section>
+
+        <!-- 消息页 -->
+        <section id="page-messages" class="page" data-route="/messages">
+            <header class="topbar safe-top">
+                <h2 class="topbar-title">消息</h2>
+            </header>
+
+            <div class="tabs tabs--top">
+                <button class="tab-btn active" data-message-tab="follow" type="button">关注我</button>
+                <button class="tab-btn" data-message-tab="comment" type="button">评论我</button>
+                <button class="tab-btn" data-message-tab="like" type="button">赞和收藏</button>
+                <button class="tab-btn" data-message-tab="comment-like" type="button">评论获赞</button>
+            </div>
+
+            <main class="page-content page-content--with-tabbar">
+                <section id="message-follow-panel" class="tab-panel active">
+                    <div id="follow-message-list" class="message-list"></div>
+                </section>
+
+                <section id="message-comment-panel" class="tab-panel hidden">
+                    <div id="comment-message-list" class="message-list"></div>
+                </section>
+
+                <section id="message-like-panel" class="tab-panel hidden">
+                    <div id="like-message-list" class="message-list"></div>
+                </section>
+
+                <section id="message-comment-like-panel" class="tab-panel hidden">
+                    <div id="comment-like-message-list" class="message-list"></div>
+                </section>
+            </main>
+        </section>
+
+        <!-- 私聊列表页 -->
+        <section id="page-chat-list" class="page" data-route="/chat-list">
+            <header class="topbar safe-top">
+                <h2 class="topbar-title">私聊</h2>
+            </header>
+
+            <main class="page-content page-content--with-tabbar">
+                <div id="chat-session-list-page" class="message-list"></div>
+            </main>
+        </section>
+
+        <!-- 聊天页 -->
+        <section id="page-chat" class="page" data-route="/chat">
+            <header class="topbar safe-top">
+                <button class="icon-btn back-btn" type="button" data-back>返回</button>
+                <h2 id="chat-page-title" class="topbar-title">私聊</h2>
+            </header>
+
+            <main class="page-content page-content--with-chatbar">
+                <div id="chat-message-list" class="chat-message-list"></div>
+            </main>
+
+            <div class="chat-inputbar safe-bottom">
+                <input id="chat-input" type="text" placeholder="输入消息..." />
+                <button id="chat-emoji-btn" class="icon-btn" type="button">😊</button>
+                <button id="chat-send-btn" class="primary-btn primary-btn--small" type="button">发送</button>
+            </div>
+        </section>
+
+        <!-- 底部 tab 栏 -->
+        <nav id="global-tabbar" class="global-tabbar safe-bottom hidden">
+            <button class="tabbar-item active" data-tabbar-route="/home" type="button">
+                <span class="tabbar-icon" data-tabbar-icon="home"></span>
+                <span>首页</span>
+            </button>
+
+            <button class="tabbar-item" data-tabbar-route="/messages" type="button">
+                <span class="tabbar-icon" data-tabbar-icon="message"></span>
+                <span>消息</span>
+                <span id="global-message-badge" class="tabbar-badge hidden">0</span>
+            </button>
+
+            <button class="tabbar-publish-btn" data-tabbar-route="/publish" type="button" aria-label="发布">
+                <span class="tabbar-publish-plus">+</span>
+            </button>
+
+            <button class="tabbar-item" data-tabbar-route="/chat-list" type="button">
+                <span class="tabbar-icon" data-tabbar-icon="chat"></span>
+                <span>私聊</span>
+            </button>
+
+            <button class="tabbar-item" data-tabbar-route="/profile" type="button">
+                <span class="tabbar-icon" data-tabbar-icon="profile"></span>
+                <span>我的</span>
+            </button>
+        </nav>
+    </div>
+    <script src="./js/config-state.js"></script>
+    <script src="./js/core-router-utils.js"></script>
+    <script src="./js/posts-home-detail.js"></script>
+    <script src="./js/comments.js"></script>
+    <script src="./js/profile-follow.js"></script>
+    <script src="./js/search-topic.js"></script>
+    <script src="./js/publish-drafts.js"></script>
+    <script src="./js/messages.js"></script>
+    <script src="./js/chat.js"></script>
+    <script src="./js/settings-login.js"></script>
+    <script src="./js/bootstrap.js"></script>
+</body>
+
+</html>
