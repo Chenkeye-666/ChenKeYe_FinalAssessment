@@ -541,7 +541,10 @@ function bindLikeMessageEvents() {
         card.addEventListener('click', () => {
             markMessageCardAsRead(card);
 
-            openMessageTargetPost(card);
+            openMessageTargetPost(card, {
+                validate: true,
+                failMessage: '相关帖子不存在，无法跳转'
+            });
         });
     });
 }
@@ -555,7 +558,10 @@ function bindCommentMessageEvents() {
         card.addEventListener('click', () => {
             markMessageCardAsRead(card);
 
-            openMessageTargetPost(card);
+            openMessageTargetPost(card, {
+                validate: true,
+                failMessage: '相关帖子不存在，无法跳转'
+            });
         });
     });
 }
@@ -571,7 +577,7 @@ function bindCommentLikeMessageEvents() {
 
             openMessageTargetPost(card, {
                 validate: true,
-                failMessage: '这条评论获赞暂不支持直接跳转原帖'
+                failMessage: '相关帖子不存在，无法跳转'
             });
         });
     });
