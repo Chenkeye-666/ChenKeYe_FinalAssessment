@@ -543,7 +543,7 @@ function bindLikeMessageEvents() {
 
             openMessageTargetPost(card, {
                 validate: true,
-                failMessage: '相关帖子不存在，无法跳转'
+                failMessage: '相关帖子不存在，无法跳转!'
             });
         });
     });
@@ -560,7 +560,7 @@ function bindCommentMessageEvents() {
 
             openMessageTargetPost(card, {
                 validate: true,
-                failMessage: '相关帖子不存在，无法跳转'
+                failMessage: '相关帖子不存在，无法跳转!'
             });
         });
     });
@@ -577,7 +577,7 @@ function bindCommentLikeMessageEvents() {
 
             openMessageTargetPost(card, {
                 validate: true,
-                failMessage: '相关帖子不存在，无法跳转'
+                failMessage: '相关帖子不存在，无法跳转!'
             });
         });
     });
